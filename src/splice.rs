@@ -62,7 +62,7 @@ impl CopyFail {
         if buf.is_empty() {
             return Ok(());
         }
-        if buf.len() % 4 != 0 {
+        if !buf.len().is_multiple_of(4) {
             return Err(Error::InvalidArgument("buf.len() must be multiple of 4"));
         }
         if base_offset.saturating_add(buf.len()) > MAX_BUF {

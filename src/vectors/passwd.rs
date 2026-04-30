@@ -62,7 +62,7 @@ pub fn format_uid_4ascii(uid: u32) -> Option<[u8; 4]> {
 /// Locate the username for a given UID by scanning /etc/passwd content.
 /// Returns the username slice on success. Skips malformed lines (fewer than
 /// 3 colons) rather than aborting the whole scan.
-pub fn find_username_for_uid<'a>(body: &'a [u8], uid: u32) -> Option<&'a [u8]> {
+pub fn find_username_for_uid(body: &[u8], uid: u32) -> Option<&[u8]> {
     let want = format_uid_4ascii(uid)?;
     let mut line_start = 0usize;
     while line_start < body.len() {

@@ -46,7 +46,7 @@ impl Vector for SuVector {
         // bytes past the payload in the page cache, corrupting the loaded
         // image. The .S sources are responsible for ending on a 4-byte
         // boundary; the Makefile builds them to ensure this.
-        if PAYLOAD.len() % 4 != 0 {
+        if !PAYLOAD.len().is_multiple_of(4) {
             return Err(Error::InvalidArgument(
                 "payload length must be a multiple of 4",
             ));

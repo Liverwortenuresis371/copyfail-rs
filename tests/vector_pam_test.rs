@@ -250,7 +250,7 @@ fn fedora_faillock_comment_buf_writes_hash_at_line_start() {
     let mut out = [0u8; 4096];
     let n = build_fedora_faillock_comment_buf(original, off, &mut out).unwrap();
     assert_eq!(n % 4, 0);
-    assert!(n >= off + 1);
+    assert!(n > off);
     // Byte at line-start becomes '#'; bytes before mutation match original.
     assert_eq!(&out[..off], &original[..off]);
     assert_eq!(out[off], b'#');

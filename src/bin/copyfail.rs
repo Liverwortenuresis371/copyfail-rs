@@ -36,6 +36,7 @@ Usage:\n\
   copyfail --help\n";
 
 #[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn main(argc: i32, argv: *const *const u8) -> i32 {
     let args = unsafe { Args::parse(argc, argv) };
     match args.cmd {
@@ -183,7 +184,7 @@ unsafe fn parse_u32(p: *const u8) -> u32 {
     loop {
         let c = *p.add(i);
         if c == 0 { break; }
-        if !(b'0'..=b'9').contains(&c) { return 0; }
+        if !c.is_ascii_digit() { return 0; }
         n = n.saturating_mul(10).saturating_add((c - b'0') as u32);
         i += 1;
     }

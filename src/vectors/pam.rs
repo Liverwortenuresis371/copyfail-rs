@@ -185,7 +185,7 @@ where
         let rest = &raw[j..];
         if !rest.is_empty() && rest[0] != b'#' && rest.starts_with(b"auth") {
             let after = rest.get(4).copied();
-            if after.map_or(true, |c| c == b' ' || c == b'\t') {
+            if after.is_none_or(|c| c == b' ' || c == b'\t') {
                 if let Some(r) = f(line_start, token_off, raw) {
                     return Some(r);
                 }
@@ -271,6 +271,10 @@ pub fn build_fedora_faillock_comment_buf(original: &[u8], line_offset: usize, ou
 
 pub struct PamVector {
     family: DistroFamily,
+}
+
+impl Default for PamVector {
+    fn default() -> Self { Self::new() }
 }
 
 impl PamVector {

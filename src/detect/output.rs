@@ -27,7 +27,7 @@ pub fn check_human(r: &CheckReport, out: &mut String<OUT_BUF>) {
     if r.config_y_warning {
         let _ = writeln!(out, "WARNING:       CONFIG_CRYPTO_USER_API_AEAD=y — modprobe blacklist BYPASSED");
     }
-    let _ = writeln!(out, "");
+    let _ = writeln!(out);
     let _ = writeln!(out, "VERDICT:       {}", verdict_str(r.verdict));
     if !r.recommendation.is_empty() {
         let _ = writeln!(out, "RECOMMEND:     {}", r.recommendation);
@@ -72,7 +72,7 @@ pub fn check_json(r: &CheckReport, out: &mut String<OUT_BUF>) {
 pub fn scan_human(r: &ScanReport, out: &mut String<OUT_BUF>) {
     let _ = writeln!(out, "=== copyfail-rs detection: --scan ===");
     let _ = writeln!(out, "Scanned {} paths in {}ms.", r.entries.len(), r.elapsed_ms);
-    let _ = writeln!(out, "");
+    let _ = writeln!(out);
 
     let n_clean = r.count(FileVerdict::Clean);
     let n_tamp = r.count(FileVerdict::Tampered);
@@ -85,7 +85,7 @@ pub fn scan_human(r: &ScanReport, out: &mut String<OUT_BUF>) {
     }
 
     if n_tamp > 0 {
-        let _ = writeln!(out, "");
+        let _ = writeln!(out);
         let _ = writeln!(out, "TAMPERED ({}):", n_tamp);
         for e in r.entries.iter().filter(|e| e.verdict == FileVerdict::Tampered) {
             let _ = writeln!(out, "  {} [{}]", e.path.as_str(), fs_str(e.fs));
@@ -99,7 +99,7 @@ pub fn scan_human(r: &ScanReport, out: &mut String<OUT_BUF>) {
     }
 
     if n_skip > 0 {
-        let _ = writeln!(out, "");
+        let _ = writeln!(out);
         let _ = writeln!(out, "SKIPPED ({}):", n_skip);
         for e in r.entries.iter().filter(|e| e.verdict == FileVerdict::Skipped) {
             let _ = writeln!(out, "  {} — {}", e.path.as_str(), e.note.as_str());
@@ -107,14 +107,14 @@ pub fn scan_human(r: &ScanReport, out: &mut String<OUT_BUF>) {
     }
 
     if n_err > 0 {
-        let _ = writeln!(out, "");
+        let _ = writeln!(out);
         let _ = writeln!(out, "ERRORS ({}):", n_err);
         for e in r.entries.iter().filter(|e| e.verdict == FileVerdict::Error) {
             let _ = writeln!(out, "  {} — {}", e.path.as_str(), e.note.as_str());
         }
     }
 
-    let _ = writeln!(out, "");
+    let _ = writeln!(out);
     if n_tamp > 0 {
         let _ = writeln!(out, "VERDICT:   TAMPERING DETECTED — investigate");
     } else if n_clean == r.entries.len() {
@@ -165,9 +165,10 @@ pub fn diff_human<const N: usize>(diffs: &heapless::Vec<DiffEntry, N>, out: &mut
             DiffKind::CacheTampered => "CACHE-ONLY (CopyFail signature)",
             DiffKind::BothChanged => "BOTH CHANGED",
             DiffKind::Missing => "MISSING / UNREADABLE",
+            DiffKind::SkippedTmpfs => "SKIPPED (tmpfs — no on-disk view)",
         };
         let _ = writeln!(out, "  [{}] {}", kind, d.path.as_str());
-        if !matches!(d.kind, DiffKind::Missing) {
+        if !matches!(d.kind, DiffKind::Missing | DiffKind::SkippedTmpfs) {
             let _ = out.push_str("    baseline_disk: ");
             write_hex(&d.baseline_disk_hash, out);
             let _ = out.push_str("\n    current_disk:  ");

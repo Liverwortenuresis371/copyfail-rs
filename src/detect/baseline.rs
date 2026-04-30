@@ -1,7 +1,9 @@
 use crate::cache::read_pair;
+use crate::detect::scan::FsKind;
 use crate::syscall::close_fd;
 use crate::Error;
 use core::ffi::CStr;
+use core::mem::MaybeUninit;
 use heapless::{String, Vec};
 
 pub const MAX_BASELINE_ENTRIES: usize = 256;
@@ -20,6 +22,7 @@ pub enum DiffKind {
     CacheTampered,
     BothChanged,
     Missing,
+    SkippedTmpfs,
 }
 
 pub struct DiffEntry {
@@ -93,13 +96,20 @@ pub fn read_baseline(path: &CStr) -> Result<Vec<BaselineEntry, MAX_BASELINE_ENTR
                 path: String::new(),
                 disk_hash: [0u8; 32],
             };
+            // Hex parse: any non-hex byte rejects the entire line. Silently
+            // zeroing rejected bytes would forge a bogus hash that always
+            // looks tampered.
+            let mut hex_ok = true;
             for i in 0..32 {
-                let hi = match unhex(hex_part[i * 2]) { Some(v) => v, None => continue };
-                let lo = match unhex(hex_part[i * 2 + 1]) { Some(v) => v, None => continue };
+                let hi = match unhex(hex_part[i * 2]) { Some(v) => v, None => { hex_ok = false; break } };
+                let lo = match unhex(hex_part[i * 2 + 1]) { Some(v) => v, None => { hex_ok = false; break } };
                 entry.disk_hash[i] = (hi << 4) | lo;
             }
+            if !hex_ok { continue; }
             if let Ok(s) = core::str::from_utf8(path_part) {
                 let _ = entry.path.push_str(s);
+            } else {
+                continue;
             }
             if out.push(entry).is_err() { break; }
         }
@@ -127,6 +137,15 @@ pub fn diff_baseline(path: &CStr) -> Result<Vec<DiffEntry, MAX_BASELINE_ENTRIES>
         };
         let _ = d.path.push_str(e.path.as_str());
 
+        // tmpfs has no on-disk view: read_pair would return identical cache
+        // and "disk" hashes (same buffered bytes), so cache mutation cannot
+        // be detected. Skip with a labeled entry rather than silently report
+        // Clean.
+        if matches!(fs_kind(cstr), Some(FsKind::Tmpfs)) {
+            d.kind = DiffKind::SkippedTmpfs;
+            if out.push(d).is_err() { break; }
+            continue;
+        }
         match read_pair(cstr) {
             Ok(hp) => {
                 d.current_disk_hash = hp.disk;
@@ -147,6 +166,20 @@ pub fn diff_baseline(path: &CStr) -> Result<Vec<DiffEntry, MAX_BASELINE_ENTRIES>
         if out.push(d).is_err() { break; }
     }
     Ok(out)
+}
+
+fn fs_kind(path: &CStr) -> Option<FsKind> {
+    unsafe {
+        let mut sb: MaybeUninit<libc::statfs> = MaybeUninit::uninit();
+        if libc::statfs(path.as_ptr(), sb.as_mut_ptr()) != 0 {
+            return None;
+        }
+        let sb = sb.assume_init();
+        #[allow(clippy::unnecessary_cast)]
+        let m = sb.f_type as i64;
+        const TMPFS_MAGIC: i64 = 0x0102_1994;
+        Some(if m == TMPFS_MAGIC { FsKind::Tmpfs } else { FsKind::Other })
+    }
 }
 
 fn hex_high(b: u8) -> u8 { hex_digit(b >> 4) }

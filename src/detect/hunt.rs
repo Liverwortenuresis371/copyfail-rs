@@ -19,6 +19,15 @@ pub fn run_hunt(hosts_file: &CStr) -> Result<(), Error> {
         let trimmed = trim_ws(line);
         if trimmed.is_empty() || trimmed[0] == b'#' { continue; }
         if trimmed.len() >= MAX_HOST_LEN { continue; }
+        // Refuse hosts starting with '-': prevents ssh from interpreting the
+        // host string as a flag (e.g. `-oProxyCommand=...`).
+        if trimmed[0] == b'-' {
+            write_stderr(b"--- ");
+            write_stderr(trimmed);
+            write_stderr(b" --- rejected: host begins with '-'\n");
+            errs += 1;
+            continue;
+        }
         total_hosts += 1;
 
         let mut host_nul: heapless::Vec<u8, { MAX_HOST_LEN + 1 }> = heapless::Vec::new();
@@ -92,10 +101,16 @@ fn ssh_check(host_nul: &[u8], output_buf: &mut [u8]) -> Result<usize, Error> {
             let cmd4 = c"--check";
             let cmd5 = c"--json";
 
-            let argv_full: [*const libc::c_char; 12] = [
+            // `--` ends ssh option parsing; host is the next positional arg.
+            // Combined with the leading-`-` rejection in run_hunt, this
+            // prevents an attacker-controlled hosts file from injecting ssh
+            // flags (e.g. `-oProxyCommand=...`) via the host field.
+            let opt_end = c"--";
+            let argv_full: [*const libc::c_char; 13] = [
                 prog.as_ptr(),
                 opt1.as_ptr(), opt1v.as_ptr(),
                 opt2.as_ptr(), opt2v.as_ptr(),
+                opt_end.as_ptr(),
                 host_nul.as_ptr() as *const libc::c_char,
                 cmd1.as_ptr(), cmd2.as_ptr(), cmd3.as_ptr(), cmd4.as_ptr(), cmd5.as_ptr(),
                 core::ptr::null(),

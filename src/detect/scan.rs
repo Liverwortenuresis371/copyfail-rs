@@ -49,7 +49,7 @@ impl ScanReport {
     }
 }
 
-pub fn default_paths() -> [&'static CStr; 18] {
+pub fn default_paths() -> [&'static CStr; 20] {
     [
         c"/usr/bin/su",
         c"/usr/bin/sudo",
@@ -68,10 +68,14 @@ pub fn default_paths() -> [&'static CStr; 18] {
         c"/etc/pam.d/su",
         c"/etc/pam.d/login",
         c"/etc/pam.d/common-auth",
+        c"/etc/pam.d/system-auth",
+        c"/etc/ld.so.preload",
         c"/etc/ssh/sshd_config",
     ]
 }
 
+// FS magic numbers per kernel uapi/linux/magic.h. Cast to i64 covers both
+// glibc (signed __fsword_t) and musl (unsigned u64) statfs.f_type widths.
 const EXT_MAGIC: i64 = 0xEF53;
 const XFS_MAGIC: i64 = 0x5846_5342;
 const BTRFS_MAGIC: i64 = 0x9123_683E;
@@ -96,7 +100,9 @@ fn fs_kind(path: &CStr) -> Option<FsKind> {
             return None;
         }
         let sb = sb.assume_init();
-        Some(classify(sb.f_type as i64))
+        #[allow(clippy::unnecessary_cast)]
+        let m = sb.f_type as i64;
+        Some(classify(m))
     }
 }
 
