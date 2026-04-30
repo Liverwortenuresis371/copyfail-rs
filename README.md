@@ -16,7 +16,7 @@ uid=0(root) gid=0(root) groups=0(root)
 root@host:~#
 ```
 
-One command. Root shell. PAM killshot under the hood (single 4-byte write to /etc/pam.d/common-auth), PTY drop into root via sudo with thrown-away password. The `[sudo] password for noot:` line flashes briefly — sudo always echoes that prompt; the binary feeds it any string and pam_unix's failure cascades through the commented-out pam_deny.so to pam_permit.so → root.
+One command. Root shell. PAM killshot under the hood (single 4-byte write to /etc/pam.d/common-auth), PTY drop into root via sudo with thrown-away password. The `[sudo] password for noot:` line flashes briefly, sudo always echoes that prompt; the binary feeds it any string and pam_unix's failure cascades through the commented-out pam_deny.so to pam_permit.so → root.
 
 ```
 $ ./copyfail-rs --mode detect --scan
@@ -64,11 +64,11 @@ Auto-pick: `--vector auto` (default). Ranks pam > su > passwd by stealth. Falls 
 
 `detection/`:
 
-- `sigma/copyfail-af-alg.yml` — Sigma rule, drop in your SIEM
-- `auditd/copyfail.rules` — `augenrules --load`
-- `ebpf/copyfail-trace.bt` — bpftrace one-liner
-- `apparmor/copyfail-block.profile` — AppArmor 3.0+ deny rule
-- `mitigation/disable-algif.sh` — modprobe blacklist + `=y` warning
+- `sigma/copyfail-af-alg.yml`, Sigma rule, drop in your SIEM
+- `auditd/copyfail.rules`, `augenrules --load`
+- `ebpf/copyfail-trace.bt`, bpftrace one-liner
+- `apparmor/copyfail-block.profile`, AppArmor 3.0+ deny rule
+- `mitigation/disable-algif.sh`, modprobe blacklist + `=y` warning
 
 ## Mitigation
 

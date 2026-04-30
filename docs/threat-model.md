@@ -1,4 +1,4 @@
-# copyfail-rs — threat model
+# copyfail-rs, threat model
 
 Dual-mode tool. STRIDE-flavored, ~1 page.
 
@@ -29,7 +29,7 @@ This is a local privilege-escalation primitive plus a host-local forensic detect
 ### `--mode detect`
 
 - `--check`: reads `/proc/version`, `/proc/modules`, `/proc/crypto`, `/boot/config-$(uname -r)` (streaming grep), `/etc/modprobe.d/`. Returns verdict.
-- `--scan` / `--diff`: opens each target file twice — once with `O_DIRECT` (skip cache) when the filesystem supports it, once with normal `read()` (cache-served) — hashes both with sha256, compares.
+- `--scan` / `--diff`: opens each target file twice, once with `O_DIRECT` (skip cache) when the filesystem supports it, once with normal `read()` (cache-served), hashes both with sha256, compares.
 - `--baseline`: dumps a JSON of `(path, disk_hash, statfs_fstype)` snapshots.
 - `--watch`: re-runs scan loop with `nanosleep`. SIGTERM closes cleanly.
 - `--hunt`: forks `ssh` to each host in `--hosts FILE` and runs `--mode detect --check --json` over the link.
@@ -47,14 +47,14 @@ This is a local privilege-escalation primitive plus a host-local forensic detect
 
 - Cache-vs-disk hash divergence on monitored files: the **CopyFail signature**. Every public PoC at the time of writing leaves this signature.
 - Kernel/module/template state for vulnerability assessment.
-- Which filesystems on the host don't support O_DIRECT (overlayfs, tmpfs, fuse) — useful for detection-coverage gap analysis.
-- The full set of paths checked. No per-file content is logged — only hashes (sha256, 32 bytes each, attacker can't reconstruct contents from hash).
+- Which filesystems on the host don't support O_DIRECT (overlayfs, tmpfs, fuse), useful for detection-coverage gap analysis.
+- The full set of paths checked. No per-file content is logged, only hashes (sha256, 32 bytes each, attacker can't reconstruct contents from hash).
 
 ## What is intentionally NOT in scope
 
 This binary **does not** implement:
 
-- Post-exploit persistence (no rootkit, no cron, no systemd unit, no SSH key drop, no /etc/passwd write — only RAM-only mutation).
+- Post-exploit persistence (no rootkit, no cron, no systemd unit, no SSH key drop, no /etc/passwd write, only RAM-only mutation).
 - C2, beaconing, exfiltration, or any network callback.
 - Lateral movement (no SSH client outside `--hunt`, which is read-only check; no SMB, no Kerberos, no WMI equivalent).
 - Detection-evasion against EDR / AV / kernel-hardening (no syscall obfuscation, no anti-debug, no bootkit). The Sigma + auditd + eBPF rules in `detection/` are designed to detect *this exact binary*.
@@ -70,8 +70,8 @@ This binary **does not** implement:
 | Tampering with the binary | Distribution channel (GitHub release attachment). | Private repo; signed-tag practice; sums posted alongside binaries. |
 | Repudiation | Operator runs `--mode exploit` and denies it. | auditd rule (`detection/auditd/copyfail.rules`) catches the AF_ALG SOCK_SEQPACKET socket creation. Sigma rule covers the same in SIEM. |
 | Information disclosure | Detect mode logs paths or hashes the operator considers sensitive. | All output is opt-in stdout / `--json`. `--watch` writes to stderr only (no syslog backend in v1). |
-| Denial of service | Repeated `--mode exploit` against PAM config bricks auth on the host. | Idempotent (S2.7) — second run is a no-op when the bypass is already active. PAM bypass is *unlock*, not lock; sudo continues to accept any string, so no DoS arises from the exploit itself. The page-cache mutation does, however, block the *original* user's correct password on `getpwnam` callers if cache served (see passwd vector caveat in S2 findings). |
-| Elevation of privilege | The whole point. | Mitigation: modprobe blacklist (`detection/mitigation/disable-algif.sh`) + kernel patch backport. Detection: `--mode detect`. AppArmor profile (`detection/apparmor/copyfail-block.profile`) deny-rules `network alg` for confined unprivileged processes — defense-in-depth. |
+| Denial of service | Repeated `--mode exploit` against PAM config bricks auth on the host. | Idempotent (S2.7), second run is a no-op when the bypass is already active. PAM bypass is *unlock*, not lock; sudo continues to accept any string, so no DoS arises from the exploit itself. The page-cache mutation does, however, block the *original* user's correct password on `getpwnam` callers if cache served (see passwd vector caveat in S2 findings). |
+| Elevation of privilege | The whole point. | Mitigation: modprobe blacklist (`detection/mitigation/disable-algif.sh`) + kernel patch backport. Detection: `--mode detect`. AppArmor profile (`detection/apparmor/copyfail-block.profile`) deny-rules `network alg` for confined unprivileged processes, defense-in-depth. |
 
 ## Trust boundaries
 

@@ -1,4 +1,4 @@
-# copyfail-rs — usage
+# copyfail-rs, usage
 
 One-screenful examples per mode. Output blocks are the real binary's output, not editorialized.
 
@@ -6,7 +6,7 @@ Run the binary unprivileged. It calls into AF_ALG / splice / sudo itself; no `su
 
 ## Exploit mode
 
-### Basic — auto-pick best vector and drop a root shell
+### Basic, auto-pick best vector and drop a root shell
 
 ```
 $ copyfail --mode exploit
@@ -153,7 +153,7 @@ Subprocesses out to `ssh`. Sequential v1; bounded-parallel pool is a follow-up.
 |------|---------|
 | 0 | Success (exploit landed, scan clean, check verdict reported) |
 | 1 | Generic failure / programmer error |
-| 2 | (retired) — was authorization-gate refusal |
+| 2 | (retired), was authorization-gate refusal |
 | 3 | Host kernel not vulnerable |
 | 4 | All vectors failed (`--vector all`) |
 | 5 | Partial success with `--strict` (some vector failed before one succeeded) |
