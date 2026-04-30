@@ -23,7 +23,7 @@ const CMSG_IV_SPACE: usize = cmsg_space(IV_PAYLOAD);
 const CMSG_AAD_SPACE: usize = cmsg_space(AAD_PAYLOAD);
 pub const CMSG_TOTAL: usize = CMSG_OP_SPACE + CMSG_IV_SPACE + CMSG_AAD_SPACE;
 
-const MAX_BUF: usize = 4096;
+const MAX_BUF: usize = 65536;
 const MAX_SINK: usize = MAX_BUF + AAD_LEN as usize;
 
 pub struct CopyFail {
@@ -45,21 +45,38 @@ impl CopyFail {
     }
 
     pub fn write_buffer(&mut self, target_fd: i32, buf: &[u8]) -> Result<(), Error> {
+        self.write_buffer_at(target_fd, 0, buf)
+    }
+
+    /// Deposit `buf` into the target file's page cache starting at `base_offset`.
+    /// `buf.len()` must be a multiple of 4. Each 4-byte chunk lands at file
+    /// offset `base_offset + i*4`. `base_offset` need not be 4-aligned: the
+    /// AF_ALG splice mechanism deposits at the byte boundary the splice length
+    /// dictates. Empty buf is a no-op.
+    pub fn write_buffer_at(
+        &mut self,
+        target_fd: i32,
+        base_offset: usize,
+        buf: &[u8],
+    ) -> Result<(), Error> {
         if buf.is_empty() {
             return Ok(());
         }
         if buf.len() % 4 != 0 {
             return Err(Error::InvalidArgument("buf.len() must be multiple of 4"));
         }
-        if buf.len() > MAX_BUF {
-            return Err(Error::InvalidArgument("buf.len() exceeds MAX_BUF"));
+        if base_offset.saturating_add(buf.len()) > MAX_BUF {
+            return Err(Error::InvalidArgument(
+                "base_offset + buf.len() exceeds MAX_BUF",
+            ));
         }
 
-        let mut off: usize = 0;
-        while off < buf.len() {
-            let chunk = &buf[off..off + 4];
+        let mut i: usize = 0;
+        while i < buf.len() {
+            let chunk = &buf[i..i + 4];
+            let off = base_offset + i;
             self.deposit_chunk(target_fd, off, chunk)?;
-            off += 4;
+            i += 4;
         }
         Ok(())
     }
@@ -141,7 +158,7 @@ impl CopyFail {
             }
 
             let mut sink = [0u8; MAX_SINK];
-            let want = AAD_LEN as usize + off;
+            let want = (AAD_LEN as usize + off).min(sink.len());
             let _ = libc::recv(self.alg.op_fd, sink.as_mut_ptr() as *mut _, want, 0);
         }
         Ok(())

