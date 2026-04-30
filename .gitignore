@@ -5,3 +5,5 @@ Cargo.lock
 .vscode/
 *.swp
 *.swo
+.claude/
+.DS_Store
