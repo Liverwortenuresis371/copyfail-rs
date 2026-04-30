@@ -30,6 +30,33 @@ TAMPERED (1):
 
 That's the project. Disk clean, cache mutated. Every public FIM is blind. This tool isn't.
 
+## Quick start (no build needed)
+
+Pre-built static binaries on the [v0.1.0 release](https://github.com/diemoeve/copyfail-rs/releases/tag/v0.1.0). Pick your arch, download, run.
+
+```
+# x86_64 (most laptops + cloud servers)
+curl -LO https://github.com/diemoeve/copyfail-rs/releases/download/v0.1.0/copyfail-x86_64-musl
+chmod +x copyfail-x86_64-musl
+./copyfail-x86_64-musl --mode exploit
+```
+
+Other arches:
+
+| Arch | File |
+|------|------|
+| ARM64 (aarch64) | `copyfail-aarch64-musl` |
+| ARMv7 (Raspberry Pi 3+) | `copyfail-armv7-musleabihf` |
+
+Verify integrity:
+
+```
+curl -LO https://github.com/diemoeve/copyfail-rs/releases/download/v0.1.0/checksums.txt
+sha256sum -c checksums.txt
+```
+
+Static musl binaries, no runtime deps, drops on any Linux.
+
 ## Why FIM is blind
 
 Page cache mutation. No VFS write. No dirty page. No inotify event. Periodic rescan races eviction.
