@@ -1,6 +1,4 @@
-use copyfail_rs::vectors::passwd::{
-    find_uid_offset, find_username_for_uid, format_uid_4ascii,
-};
+use copyfail_rs::vectors::passwd::{find_uid_offset, find_username_for_uid, format_uid_4ascii};
 
 #[test]
 fn format_uid_4digit() {
@@ -49,7 +47,10 @@ fn passwd_offset_username_prefix_must_not_match() {
     let mut body = Vec::new();
     body.extend_from_slice(alicia_line);
     body.extend_from_slice(b"alice:x:1234:1234:Alice:/home/alice:/bin/bash\n");
-    assert_eq!(find_uid_offset(&body, b"alice"), Some(alicia_line.len() + 8));
+    assert_eq!(
+        find_uid_offset(&body, b"alice"),
+        Some(alicia_line.len() + 8)
+    );
 }
 
 #[test]

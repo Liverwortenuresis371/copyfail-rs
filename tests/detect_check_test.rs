@@ -1,6 +1,4 @@
-use copyfail_rs::detect::check::{
-    run_check_with_sources, CheckSources, ConfigState, Verdict,
-};
+use copyfail_rs::detect::check::{run_check_with_sources, CheckSources, ConfigState, Verdict};
 use std::ffi::CString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -49,8 +47,16 @@ impl Fixture {
         let modprobe_d_c = cs(&modprobe_d);
         let osrelease_c = cs(&osrelease);
         Fixture {
-            proc_modules, proc_crypto, boot_config, modprobe_d, osrelease,
-            proc_modules_c, proc_crypto_c, boot_config_c, modprobe_d_c, osrelease_c,
+            proc_modules,
+            proc_crypto,
+            boot_config,
+            modprobe_d,
+            osrelease,
+            proc_modules_c,
+            proc_crypto_c,
+            boot_config_c,
+            modprobe_d_c,
+            osrelease_c,
         }
     }
 
@@ -68,9 +74,16 @@ impl Fixture {
 #[test]
 fn vulnerable_module_loaded_no_blacklist() {
     let f = Fixture::new("vuln_loaded");
-    fs::write(&f.proc_modules,
-        b"algif_aead 16384 0 - Live 0x0000000000000000\nfoo 4096 0 - Live 0x0\n").unwrap();
-    fs::write(&f.proc_crypto, b"name : authencesn(hmac(sha256),cbc(aes))\n").unwrap();
+    fs::write(
+        &f.proc_modules,
+        b"algif_aead 16384 0 - Live 0x0000000000000000\nfoo 4096 0 - Live 0x0\n",
+    )
+    .unwrap();
+    fs::write(
+        &f.proc_crypto,
+        b"name : authencesn(hmac(sha256),cbc(aes))\n",
+    )
+    .unwrap();
     fs::write(&f.boot_config, b"# config\nCONFIG_CRYPTO_USER_API_AEAD=m\n").unwrap();
 
     let r = run_check_with_sources(&f.sources()).unwrap();
@@ -88,10 +101,17 @@ fn vulnerable_builtin_with_blacklist_still_vulnerable() {
     // R3 critical: =y kernel ignores modprobe blacklist
     let f = Fixture::new("vuln_builtin");
     fs::write(&f.proc_modules, b"foo 4096 0 - Live 0x0\n").unwrap();
-    fs::write(&f.proc_crypto, b"name : authencesn(hmac(sha256),cbc(aes))\n").unwrap();
+    fs::write(
+        &f.proc_crypto,
+        b"name : authencesn(hmac(sha256),cbc(aes))\n",
+    )
+    .unwrap();
     fs::write(&f.boot_config, b"CONFIG_CRYPTO_USER_API_AEAD=y\n").unwrap();
-    fs::write(f.modprobe_d.join("disable-algif.conf"),
-        b"install algif_aead /bin/false\n").unwrap();
+    fs::write(
+        f.modprobe_d.join("disable-algif.conf"),
+        b"install algif_aead /bin/false\n",
+    )
+    .unwrap();
 
     let r = run_check_with_sources(&f.sources()).unwrap();
     assert_eq!(r.config_aead, ConfigState::Builtin);
@@ -105,8 +125,11 @@ fn mitigated_module_blacklisted_install_directive() {
     fs::write(&f.proc_modules, b"foo 4096 0 - Live 0x0\n").unwrap();
     fs::write(&f.proc_crypto, b"").unwrap();
     fs::write(&f.boot_config, b"CONFIG_CRYPTO_USER_API_AEAD=m\n").unwrap();
-    fs::write(f.modprobe_d.join("disable-algif.conf"),
-        b"install algif_aead /bin/false\n").unwrap();
+    fs::write(
+        f.modprobe_d.join("disable-algif.conf"),
+        b"install algif_aead /bin/false\n",
+    )
+    .unwrap();
 
     let r = run_check_with_sources(&f.sources()).unwrap();
     assert!(!r.algif_aead_loaded);
@@ -121,8 +144,11 @@ fn mitigated_module_blacklisted_blacklist_directive() {
     fs::write(&f.proc_modules, b"").unwrap();
     fs::write(&f.proc_crypto, b"").unwrap();
     fs::write(&f.boot_config, b"CONFIG_CRYPTO_USER_API_AEAD=m\n").unwrap();
-    fs::write(f.modprobe_d.join("blacklist-crypto.conf"),
-        b"# comments\nblacklist algif_aead\n").unwrap();
+    fs::write(
+        f.modprobe_d.join("blacklist-crypto.conf"),
+        b"# comments\nblacklist algif_aead\n",
+    )
+    .unwrap();
 
     let r = run_check_with_sources(&f.sources()).unwrap();
     assert!(r.mitigation_present);
@@ -160,7 +186,11 @@ fn not_exploitable_when_config_n() {
     let f = Fixture::new("config_n");
     fs::write(&f.proc_modules, b"").unwrap();
     fs::write(&f.proc_crypto, b"").unwrap();
-    fs::write(&f.boot_config, b"# CONFIG_CRYPTO_USER_API_AEAD is not set\n").unwrap();
+    fs::write(
+        &f.boot_config,
+        b"# CONFIG_CRYPTO_USER_API_AEAD is not set\n",
+    )
+    .unwrap();
 
     let r = run_check_with_sources(&f.sources()).unwrap();
     assert_eq!(r.config_aead, ConfigState::NotInKernel);

@@ -10,7 +10,11 @@ pub fn check_human(r: &CheckReport, out: &mut String<OUT_BUF>) {
     let _ = writeln!(out, "=== copyfail-rs detection: --check ===");
     let _ = writeln!(out, "Kernel:        {}", r.kernel_release.as_str());
     let _ = writeln!(out, "algif_aead:    loaded={}", r.algif_aead_loaded);
-    let _ = writeln!(out, "Template:      authencesn registered={}", r.authencesn_template);
+    let _ = writeln!(
+        out,
+        "Template:      authencesn registered={}",
+        r.authencesn_template
+    );
     let _ = writeln!(out, "Config AEAD:   {}", config_str(r.config_aead));
     let mit = if r.mitigation_present {
         let mut s: String<160> = String::new();
@@ -25,7 +29,10 @@ pub fn check_human(r: &CheckReport, out: &mut String<OUT_BUF>) {
     };
     let _ = writeln!(out, "Mitigation:    {}", mit.as_str());
     if r.config_y_warning {
-        let _ = writeln!(out, "WARNING:       CONFIG_CRYPTO_USER_API_AEAD=y — modprobe blacklist BYPASSED");
+        let _ = writeln!(
+            out,
+            "WARNING:       CONFIG_CRYPTO_USER_API_AEAD=y — modprobe blacklist BYPASSED"
+        );
     }
     let _ = writeln!(out);
     let _ = writeln!(out, "VERDICT:       {}", verdict_str(r.verdict));
@@ -43,7 +50,11 @@ pub fn check_json(r: &CheckReport, out: &mut String<OUT_BUF>) {
     let _ = out.push_str(if r.algif_aead_loaded { "true" } else { "false" });
     let _ = out.push_str(",");
     let _ = out.push_str("\"template_registered\":");
-    let _ = out.push_str(if r.authencesn_template { "true" } else { "false" });
+    let _ = out.push_str(if r.authencesn_template {
+        "true"
+    } else {
+        "false"
+    });
     let _ = out.push_str(",");
     let _ = out.push_str("\"config_aead\":\"");
     let _ = out.push_str(config_str(r.config_aead));
@@ -71,7 +82,12 @@ pub fn check_json(r: &CheckReport, out: &mut String<OUT_BUF>) {
 
 pub fn scan_human(r: &ScanReport, out: &mut String<OUT_BUF>) {
     let _ = writeln!(out, "=== copyfail-rs detection: --scan ===");
-    let _ = writeln!(out, "Scanned {} paths in {}ms.", r.entries.len(), r.elapsed_ms);
+    let _ = writeln!(
+        out,
+        "Scanned {} paths in {}ms.",
+        r.entries.len(),
+        r.elapsed_ms
+    );
     let _ = writeln!(out);
 
     let n_clean = r.count(FileVerdict::Clean);
@@ -87,7 +103,11 @@ pub fn scan_human(r: &ScanReport, out: &mut String<OUT_BUF>) {
     if n_tamp > 0 {
         let _ = writeln!(out);
         let _ = writeln!(out, "TAMPERED ({}):", n_tamp);
-        for e in r.entries.iter().filter(|e| e.verdict == FileVerdict::Tampered) {
+        for e in r
+            .entries
+            .iter()
+            .filter(|e| e.verdict == FileVerdict::Tampered)
+        {
             let _ = writeln!(out, "  {} [{}]", e.path.as_str(), fs_str(e.fs));
             let _ = out.push_str("    cache:  ");
             write_hex(&e.cache_hash, out);
@@ -101,7 +121,11 @@ pub fn scan_human(r: &ScanReport, out: &mut String<OUT_BUF>) {
     if n_skip > 0 {
         let _ = writeln!(out);
         let _ = writeln!(out, "SKIPPED ({}):", n_skip);
-        for e in r.entries.iter().filter(|e| e.verdict == FileVerdict::Skipped) {
+        for e in r
+            .entries
+            .iter()
+            .filter(|e| e.verdict == FileVerdict::Skipped)
+        {
             let _ = writeln!(out, "  {} — {}", e.path.as_str(), e.note.as_str());
         }
     }
@@ -132,7 +156,9 @@ pub fn scan_json(r: &ScanReport, out: &mut String<OUT_BUF>) {
     let _ = write_usize(out, r.elapsed_ms as usize);
     let _ = out.push_str(",\"entries\":[");
     for (i, e) in r.entries.iter().enumerate() {
-        if i > 0 { let _ = out.push_str(","); }
+        if i > 0 {
+            let _ = out.push_str(",");
+        }
         let _ = out.push_str("{\"path\":\"");
         json_escape(&e.path, out);
         let _ = out.push_str("\",\"fs\":\"");
@@ -235,7 +261,11 @@ fn write_hex(bytes: &[u8], out: &mut String<OUT_BUF>) {
 }
 
 fn hex_digit_char(n: u8) -> char {
-    if n < 10 { (b'0' + n) as char } else { (b'a' + (n - 10)) as char }
+    if n < 10 {
+        (b'0' + n) as char
+    } else {
+        (b'a' + (n - 10)) as char
+    }
 }
 
 fn write_usize(out: &mut String<OUT_BUF>, n: usize) -> Result<(), core::fmt::Error> {
@@ -249,13 +279,25 @@ fn json_escape<const N: usize>(s: &String<N>, out: &mut String<OUT_BUF>) {
 fn json_escape_str(s: &str, out: &mut String<OUT_BUF>) {
     for c in s.chars() {
         match c {
-            '"' => { let _ = out.push_str("\\\""); }
-            '\\' => { let _ = out.push_str("\\\\"); }
-            '\n' => { let _ = out.push_str("\\n"); }
-            '\r' => { let _ = out.push_str("\\r"); }
-            '\t' => { let _ = out.push_str("\\t"); }
+            '"' => {
+                let _ = out.push_str("\\\"");
+            }
+            '\\' => {
+                let _ = out.push_str("\\\\");
+            }
+            '\n' => {
+                let _ = out.push_str("\\n");
+            }
+            '\r' => {
+                let _ = out.push_str("\\r");
+            }
+            '\t' => {
+                let _ = out.push_str("\\t");
+            }
             c if (c as u32) < 0x20 => { /* drop */ }
-            c => { let _ = out.push(c); }
+            c => {
+                let _ = out.push(c);
+            }
         }
     }
 }

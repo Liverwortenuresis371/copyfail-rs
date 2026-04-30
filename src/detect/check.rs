@@ -195,7 +195,9 @@ fn grep_config_streaming(path: &CStr) -> ConfigState {
         let mut found = ConfigState::Unknown;
         loop {
             let n = libc::read(fd, chunk.as_mut_ptr() as *mut _, chunk.len());
-            if n <= 0 { break; }
+            if n <= 0 {
+                break;
+            }
             for &byte in &chunk[..n as usize] {
                 if byte == b'\n' {
                     if let Some(cs) = parse_config_line(&line_buf) {
@@ -240,10 +242,18 @@ fn scan_modprobe_d(dir: &CStr) -> Result<(bool, String<MITIGATION_FILE_MAX>), Er
             // Build full path: dir + "/" + name
             let dir_bytes = dir.to_bytes();
             let mut path: heapless::Vec<u8, 512> = heapless::Vec::new();
-            if path.extend_from_slice(dir_bytes).is_err() { continue; }
-            if path.push(b'/').is_err() { continue; }
-            if path.extend_from_slice(name).is_err() { continue; }
-            if path.push(0).is_err() { continue; }
+            if path.extend_from_slice(dir_bytes).is_err() {
+                continue;
+            }
+            if path.push(b'/').is_err() {
+                continue;
+            }
+            if path.extend_from_slice(name).is_err() {
+                continue;
+            }
+            if path.push(0).is_err() {
+                continue;
+            }
             let cpath = match CStr::from_bytes_until_nul(&path) {
                 Ok(c) => c,
                 Err(_) => continue,
@@ -280,11 +290,18 @@ fn file_blacklists_algif(buf: &[u8]) -> bool {
 
 fn line_matches_token(line: &[u8], directive: &[u8], target: &[u8]) -> bool {
     let mut parts = line.split(|&b| b == b' ' || b == b'\t');
-    let p1 = match parts.next() { Some(s) => s, None => return false };
-    if p1 != directive { return false; }
+    let p1 = match parts.next() {
+        Some(s) => s,
+        None => return false,
+    };
+    if p1 != directive {
+        return false;
+    }
     // Skip empty splits from multiple spaces
     for p in parts {
-        if p.is_empty() { continue; }
+        if p.is_empty() {
+            continue;
+        }
         return p == target;
     }
     false
@@ -302,9 +319,13 @@ pub(crate) fn read_file_buf(path: &CStr) -> Result<([u8; READ_BUF], usize), Erro
         }
         let mut total: usize = 0;
         loop {
-            if total >= buf.len() { break; }
+            if total >= buf.len() {
+                break;
+            }
             let n = libc::read(fd, buf.as_mut_ptr().add(total) as *mut _, buf.len() - total);
-            if n <= 0 { break; }
+            if n <= 0 {
+                break;
+            }
             total += n as usize;
         }
         close_fd(fd);
@@ -326,11 +347,19 @@ fn trim_ws(s: &[u8]) -> &[u8] {
     let mut end = s.len();
     while start < end {
         let c = s[start];
-        if c == b' ' || c == b'\t' { start += 1; } else { break; }
+        if c == b' ' || c == b'\t' {
+            start += 1;
+        } else {
+            break;
+        }
     }
     while end > start {
         let c = s[end - 1];
-        if c == 0 || c == b'\n' || c == b'\r' || c == b' ' || c == b'\t' { end -= 1; } else { break; }
+        if c == 0 || c == b'\n' || c == b'\r' || c == b' ' || c == b'\t' {
+            end -= 1;
+        } else {
+            break;
+        }
     }
     &s[start..end]
 }
@@ -349,4 +378,3 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     }
     false
 }
-

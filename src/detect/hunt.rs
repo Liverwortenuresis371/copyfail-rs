@@ -17,8 +17,12 @@ pub fn run_hunt(hosts_file: &CStr) -> Result<(), Error> {
     write_stderr(b"copyfail-rs --hunt started\n");
     for line in buf[..len].split(|&b| b == b'\n').take(MAX_HOSTS) {
         let trimmed = trim_ws(line);
-        if trimmed.is_empty() || trimmed[0] == b'#' { continue; }
-        if trimmed.len() >= MAX_HOST_LEN { continue; }
+        if trimmed.is_empty() || trimmed[0] == b'#' {
+            continue;
+        }
+        if trimmed.len() >= MAX_HOST_LEN {
+            continue;
+        }
         // Refuse hosts starting with '-': prevents ssh from interpreting the
         // host string as a flag (e.g. `-oProxyCommand=...`).
         if trimmed[0] == b'-' {
@@ -31,8 +35,12 @@ pub fn run_hunt(hosts_file: &CStr) -> Result<(), Error> {
         total_hosts += 1;
 
         let mut host_nul: heapless::Vec<u8, { MAX_HOST_LEN + 1 }> = heapless::Vec::new();
-        if host_nul.extend_from_slice(trimmed).is_err() { continue; }
-        if host_nul.push(0).is_err() { continue; }
+        if host_nul.extend_from_slice(trimmed).is_err() {
+            continue;
+        }
+        if host_nul.push(0).is_err() {
+            continue;
+        }
 
         let mut output_buf = [0u8; 4096];
         match ssh_check(&host_nul, &mut output_buf) {
@@ -42,7 +50,9 @@ pub fn run_hunt(hosts_file: &CStr) -> Result<(), Error> {
                 write_stderr(trimmed);
                 write_stderr(b" ---\n");
                 write_stderr(out);
-                if !out.ends_with(b"\n") { write_stderr(b"\n"); }
+                if !out.ends_with(b"\n") {
+                    write_stderr(b"\n");
+                }
                 if contains(out, b"\"verdict\":\"vulnerable\"") {
                     vuln += 1;
                 } else if contains(out, b"\"verdict\":\"mitigated\"") {
@@ -108,11 +118,17 @@ fn ssh_check(host_nul: &[u8], output_buf: &mut [u8]) -> Result<usize, Error> {
             let opt_end = c"--";
             let argv_full: [*const libc::c_char; 13] = [
                 prog.as_ptr(),
-                opt1.as_ptr(), opt1v.as_ptr(),
-                opt2.as_ptr(), opt2v.as_ptr(),
+                opt1.as_ptr(),
+                opt1v.as_ptr(),
+                opt2.as_ptr(),
+                opt2v.as_ptr(),
                 opt_end.as_ptr(),
                 host_nul.as_ptr() as *const libc::c_char,
-                cmd1.as_ptr(), cmd2.as_ptr(), cmd3.as_ptr(), cmd4.as_ptr(), cmd5.as_ptr(),
+                cmd1.as_ptr(),
+                cmd2.as_ptr(),
+                cmd3.as_ptr(),
+                cmd4.as_ptr(),
+                cmd5.as_ptr(),
                 core::ptr::null(),
             ];
             libc::execvp(prog.as_ptr(), argv_full.as_ptr());
@@ -123,9 +139,17 @@ fn ssh_check(host_nul: &[u8], output_buf: &mut [u8]) -> Result<usize, Error> {
         libc::close(pipefd[1]);
         let mut total = 0usize;
         loop {
-            if total >= output_buf.len() { break; }
-            let n = libc::read(pipefd[0], output_buf.as_mut_ptr().add(total) as *mut _, output_buf.len() - total);
-            if n <= 0 { break; }
+            if total >= output_buf.len() {
+                break;
+            }
+            let n = libc::read(
+                pipefd[0],
+                output_buf.as_mut_ptr().add(total) as *mut _,
+                output_buf.len() - total,
+            );
+            if n <= 0 {
+                break;
+            }
             total += n as usize;
         }
         libc::close(pipefd[0]);
@@ -141,27 +165,39 @@ fn ssh_check(host_nul: &[u8], output_buf: &mut [u8]) -> Result<usize, Error> {
 fn trim_ws(s: &[u8]) -> &[u8] {
     let mut start = 0;
     let mut end = s.len();
-    while start < end && (s[start] == b' ' || s[start] == b'\t') { start += 1; }
+    while start < end && (s[start] == b' ' || s[start] == b'\t') {
+        start += 1;
+    }
     while end > start {
         let c = s[end - 1];
-        if c == 0 || c == b'\n' || c == b'\r' || c == b' ' || c == b'\t' { end -= 1; } else { break; }
+        if c == 0 || c == b'\n' || c == b'\r' || c == b' ' || c == b'\t' {
+            end -= 1;
+        } else {
+            break;
+        }
     }
     &s[start..end]
 }
 
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    if needle.is_empty() || needle.len() > haystack.len() { return false; }
+    if needle.is_empty() || needle.len() > haystack.len() {
+        return false;
+    }
     let last = haystack.len() - needle.len();
     let mut i = 0;
     while i <= last {
-        if &haystack[i..i + needle.len()] == needle { return true; }
+        if &haystack[i..i + needle.len()] == needle {
+            return true;
+        }
         i += 1;
     }
     false
 }
 
 fn write_stderr(b: &[u8]) {
-    unsafe { libc::write(2, b.as_ptr() as *const _, b.len()); }
+    unsafe {
+        libc::write(2, b.as_ptr() as *const _, b.len());
+    }
 }
 
 fn write_num(prefix: &[u8], n: usize) {

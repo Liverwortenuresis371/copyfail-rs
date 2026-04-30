@@ -4,9 +4,7 @@
 // exit-code mapping. Mock Vector impls panic on execute() via trait so we
 // catch any code path that bypasses the closure-based runner.
 
-use copyfail_rs::orchestrator::{
-    self, AttemptOutcome, Confidence, RunReport, VectorMeta,
-};
+use copyfail_rs::orchestrator::{self, AttemptOutcome, Confidence, RunReport, VectorMeta};
 use copyfail_rs::{CopyFail, Error, Vector};
 use core::cell::Cell;
 
@@ -18,10 +16,16 @@ struct MockVector {
 }
 
 impl Vector for MockVector {
-    fn name(&self) -> &'static str { self.name }
-    fn applicable(&self) -> Result<bool, Error> { self.applicable }
+    fn name(&self) -> &'static str {
+        self.name
+    }
+    fn applicable(&self) -> Result<bool, Error> {
+        self.applicable
+    }
     fn execute(&self, _: &mut CopyFail) -> Result<(), Error> {
-        panic!("MockVector::execute called via trait — orchestrator must use the closure-based runner")
+        panic!(
+            "MockVector::execute called via trait — orchestrator must use the closure-based runner"
+        )
     }
 }
 
@@ -157,12 +161,19 @@ fn try_all_stops_at_first_success() {
     let log: Cell<u32> = Cell::new(0);
     let report: RunReport = orchestrator::try_all_with(vectors, |v| {
         log.set(log.get() + 1);
-        if v.name() == "pam" { Ok(()) } else { Err(Error::Io) }
+        if v.name() == "pam" {
+            Ok(())
+        } else {
+            Err(Error::Io)
+        }
     });
     assert_eq!(log.get(), 1, "execute should be called exactly once (pam)");
     assert_eq!(report.success, Some("pam"));
     assert_eq!(report.attempts.len(), 1);
-    assert!(matches!(report.attempts[0].outcome, AttemptOutcome::ExecuteOk));
+    assert!(matches!(
+        report.attempts[0].outcome,
+        AttemptOutcome::ExecuteOk
+    ));
 }
 
 #[test]
@@ -173,14 +184,24 @@ fn try_all_falls_through_when_first_execute_fails() {
     let vectors: &[&dyn Vector] = &[&pam, &su, &pw];
 
     let report = orchestrator::try_all_with(vectors, |v| {
-        if v.name() == "su" { Ok(()) } else { Err(Error::Io) }
+        if v.name() == "su" {
+            Ok(())
+        } else {
+            Err(Error::Io)
+        }
     });
     assert_eq!(report.success, Some("su"));
     assert_eq!(report.attempts.len(), 2);
     assert_eq!(report.attempts[0].name, "pam");
-    assert!(matches!(report.attempts[0].outcome, AttemptOutcome::ExecuteErr));
+    assert!(matches!(
+        report.attempts[0].outcome,
+        AttemptOutcome::ExecuteErr
+    ));
     assert_eq!(report.attempts[1].name, "su");
-    assert!(matches!(report.attempts[1].outcome, AttemptOutcome::ExecuteOk));
+    assert!(matches!(
+        report.attempts[1].outcome,
+        AttemptOutcome::ExecuteOk
+    ));
 }
 
 #[test]
@@ -230,8 +251,10 @@ fn try_all_records_probe_errors_as_skipped() {
 
     let report = orchestrator::try_all_with(vectors, |_| Ok(()));
     assert_eq!(report.success, Some("su"));
-    assert!(report.attempts.iter().any(|a| a.name == "pam"
-        && matches!(a.outcome, AttemptOutcome::ProbeError)));
+    assert!(report
+        .attempts
+        .iter()
+        .any(|a| a.name == "pam" && matches!(a.outcome, AttemptOutcome::ProbeError)));
 }
 
 #[test]
@@ -303,10 +326,16 @@ fn exit_code_inapplicable_only_is_four() {
 
 // ----- helpers ------------------------------------------------------------
 
-fn heapless_vec(rows: &[(&'static str, AttemptOutcome)]) -> heapless::Vec<orchestrator::Attempt, 8> {
+fn heapless_vec(
+    rows: &[(&'static str, AttemptOutcome)],
+) -> heapless::Vec<orchestrator::Attempt, 8> {
     let mut v = heapless::Vec::new();
     for (name, outcome) in rows {
-        v.push(orchestrator::Attempt { name, outcome: *outcome }).unwrap();
+        v.push(orchestrator::Attempt {
+            name,
+            outcome: *outcome,
+        })
+        .unwrap();
     }
     v
 }

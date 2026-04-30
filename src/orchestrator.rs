@@ -16,7 +16,11 @@ use heapless::Vec as HVec;
 const MAX_VECTORS: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Confidence { Low, Medium, High }
+pub enum Confidence {
+    Low,
+    Medium,
+    High,
+}
 
 impl Confidence {
     pub fn as_str(self) -> &'static str {
@@ -65,7 +69,9 @@ pub fn stealth_of(name: &str) -> u8 {
 }
 
 pub fn confidence_of(name: &str) -> Confidence {
-    meta_for(name).map(|m| m.confidence).unwrap_or(Confidence::Low)
+    meta_for(name)
+        .map(|m| m.confidence)
+        .unwrap_or(Confidence::Low)
 }
 
 // Indices into `vectors`, sorted by stealth DESC. Stable for equal stealth
@@ -78,9 +84,7 @@ fn rank_indices(vectors: &[&dyn Vector]) -> HVec<usize, MAX_VECTORS> {
     // Insertion sort, stable, no-alloc, n is tiny.
     for i in 1..idxs.len() {
         let mut j = i;
-        while j > 0
-            && stealth_of(vectors[idxs[j]].name())
-                > stealth_of(vectors[idxs[j - 1]].name())
+        while j > 0 && stealth_of(vectors[idxs[j]].name()) > stealth_of(vectors[idxs[j - 1]].name())
         {
             idxs.swap(j, j - 1);
             j -= 1;
@@ -141,10 +145,10 @@ pub fn select_vector(vectors: &[&dyn Vector]) -> Option<usize> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttemptOutcome {
-    Skipped,      // applicable() returned Ok(false)
-    ProbeError,   // applicable() returned Err(_)
-    ExecuteOk,    // execute() returned Ok(()) — bypass active
-    ExecuteErr,   // execute() returned Err(_)
+    Skipped,    // applicable() returned Ok(false)
+    ProbeError, // applicable() returned Err(_)
+    ExecuteOk,  // execute() returned Ok(()) — bypass active
+    ExecuteErr, // execute() returned Err(_)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -217,7 +221,10 @@ where
             }
         }
     }
-    RunReport { success: None, attempts }
+    RunReport {
+        success: None,
+        attempts,
+    }
 }
 
 // Spec exit codes:

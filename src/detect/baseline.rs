@@ -78,19 +78,27 @@ pub fn read_baseline(path: &CStr) -> Result<Vec<BaselineEntry, MAX_BASELINE_ENTR
         }
         let mut total = 0usize;
         loop {
-            if total >= buf.len() { break; }
+            if total >= buf.len() {
+                break;
+            }
             let n = libc::read(fd, buf.as_mut_ptr().add(total) as *mut _, buf.len() - total);
-            if n <= 0 { break; }
+            if n <= 0 {
+                break;
+            }
             total += n as usize;
         }
         close_fd(fd);
 
         let mut out: Vec<BaselineEntry, MAX_BASELINE_ENTRIES> = Vec::new();
         for line in buf[..total].split(|&b| b == b'\n') {
-            if line.len() < 65 { continue; }
+            if line.len() < 65 {
+                continue;
+            }
             // First 64 = hex, 65th must be space
             let hex_part = &line[..64];
-            if line[64] != b' ' { continue; }
+            if line[64] != b' ' {
+                continue;
+            }
             let path_part = &line[65..];
             let mut entry = BaselineEntry {
                 path: String::new(),
@@ -101,17 +109,33 @@ pub fn read_baseline(path: &CStr) -> Result<Vec<BaselineEntry, MAX_BASELINE_ENTR
             // looks tampered.
             let mut hex_ok = true;
             for i in 0..32 {
-                let hi = match unhex(hex_part[i * 2]) { Some(v) => v, None => { hex_ok = false; break } };
-                let lo = match unhex(hex_part[i * 2 + 1]) { Some(v) => v, None => { hex_ok = false; break } };
+                let hi = match unhex(hex_part[i * 2]) {
+                    Some(v) => v,
+                    None => {
+                        hex_ok = false;
+                        break;
+                    }
+                };
+                let lo = match unhex(hex_part[i * 2 + 1]) {
+                    Some(v) => v,
+                    None => {
+                        hex_ok = false;
+                        break;
+                    }
+                };
                 entry.disk_hash[i] = (hi << 4) | lo;
             }
-            if !hex_ok { continue; }
+            if !hex_ok {
+                continue;
+            }
             if let Ok(s) = core::str::from_utf8(path_part) {
                 let _ = entry.path.push_str(s);
             } else {
                 continue;
             }
-            if out.push(entry).is_err() { break; }
+            if out.push(entry).is_err() {
+                break;
+            }
         }
         Ok(out)
     }
@@ -122,8 +146,12 @@ pub fn diff_baseline(path: &CStr) -> Result<Vec<DiffEntry, MAX_BASELINE_ENTRIES>
     let mut out: Vec<DiffEntry, MAX_BASELINE_ENTRIES> = Vec::new();
     for e in entries.iter() {
         let mut nul: heapless::Vec<u8, 257> = heapless::Vec::new();
-        if nul.extend_from_slice(e.path.as_bytes()).is_err() { continue; }
-        if nul.push(0).is_err() { continue; }
+        if nul.extend_from_slice(e.path.as_bytes()).is_err() {
+            continue;
+        }
+        if nul.push(0).is_err() {
+            continue;
+        }
         let cstr = match CStr::from_bytes_until_nul(&nul) {
             Ok(c) => c,
             Err(_) => continue,
@@ -143,7 +171,9 @@ pub fn diff_baseline(path: &CStr) -> Result<Vec<DiffEntry, MAX_BASELINE_ENTRIES>
         // Clean.
         if matches!(fs_kind(cstr), Some(FsKind::Tmpfs)) {
             d.kind = DiffKind::SkippedTmpfs;
-            if out.push(d).is_err() { break; }
+            if out.push(d).is_err() {
+                break;
+            }
             continue;
         }
         match read_pair(cstr) {
@@ -163,7 +193,9 @@ pub fn diff_baseline(path: &CStr) -> Result<Vec<DiffEntry, MAX_BASELINE_ENTRIES>
                 d.kind = DiffKind::Missing;
             }
         }
-        if out.push(d).is_err() { break; }
+        if out.push(d).is_err() {
+            break;
+        }
     }
     Ok(out)
 }
@@ -178,14 +210,26 @@ fn fs_kind(path: &CStr) -> Option<FsKind> {
         #[allow(clippy::unnecessary_cast)]
         let m = sb.f_type as i64;
         const TMPFS_MAGIC: i64 = 0x0102_1994;
-        Some(if m == TMPFS_MAGIC { FsKind::Tmpfs } else { FsKind::Other })
+        Some(if m == TMPFS_MAGIC {
+            FsKind::Tmpfs
+        } else {
+            FsKind::Other
+        })
     }
 }
 
-fn hex_high(b: u8) -> u8 { hex_digit(b >> 4) }
-fn hex_low(b: u8) -> u8 { hex_digit(b & 0x0F) }
+fn hex_high(b: u8) -> u8 {
+    hex_digit(b >> 4)
+}
+fn hex_low(b: u8) -> u8 {
+    hex_digit(b & 0x0F)
+}
 fn hex_digit(n: u8) -> u8 {
-    if n < 10 { b'0' + n } else { b'a' + (n - 10) }
+    if n < 10 {
+        b'0' + n
+    } else {
+        b'a' + (n - 10)
+    }
 }
 fn unhex(c: u8) -> Option<u8> {
     match c {

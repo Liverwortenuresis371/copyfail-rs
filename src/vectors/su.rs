@@ -76,7 +76,8 @@ impl Vector for SuVector {
         }
 
         // execve("/bin/sh", ["sh","-c","su", NULL], envp_min)
-        let env_path: &[u8] = b"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\0";
+        let env_path: &[u8] =
+            b"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\0";
         let argv: [*const u8; 4] = [
             SH_ARG0_NUL.as_ptr(),
             SH_DASH_C_NUL.as_ptr(),

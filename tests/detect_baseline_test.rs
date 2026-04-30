@@ -15,7 +15,9 @@ fn target_dir(sub: &str) -> PathBuf {
 
 #[test]
 fn baseline_roundtrip_clean_no_diff() {
-    if cfg!(not(target_os = "linux")) { return; }
+    if cfg!(not(target_os = "linux")) {
+        return;
+    }
     let dir = target_dir("clean_roundtrip");
     let f1 = dir.join("a.bin");
     let f2 = dir.join("b.bin");
@@ -38,7 +40,9 @@ fn baseline_roundtrip_clean_no_diff() {
 
 #[test]
 fn baseline_detects_disk_change() {
-    if cfg!(not(target_os = "linux")) { return; }
+    if cfg!(not(target_os = "linux")) {
+        return;
+    }
     let dir = target_dir("disk_change");
     let f = dir.join("file.bin");
     fs::write(&f, vec![b'X'; 1024]).unwrap();

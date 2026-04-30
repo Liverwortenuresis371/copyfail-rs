@@ -174,14 +174,20 @@ impl Vector for PasswdVector {
             return Err(Error::InvalidArgument("username too long"));
         }
         let mut p = 0usize;
-        cmd[p] = b's'; p += 1; cmd[p] = b'u'; p += 1; cmd[p] = b' '; p += 1;
+        cmd[p] = b's';
+        p += 1;
+        cmd[p] = b'u';
+        p += 1;
+        cmd[p] = b' ';
+        p += 1;
         cmd[p..p + username.len()].copy_from_slice(username);
         p += username.len();
         cmd[p] = 0;
 
         // execve("/bin/sh", ["sh","-c","su <user>", NULL], envp_min)
         // envp_min: PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-        let env_path: &[u8] = b"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\0";
+        let env_path: &[u8] =
+            b"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\0";
         let argv: [*const u8; 4] = [
             SH_ARG0_NUL.as_ptr(),
             SH_DASH_C_NUL.as_ptr(),
@@ -209,11 +215,7 @@ fn read_passwd_into(buf: &mut [u8]) -> Result<usize, Error> {
         }
         let mut total = 0usize;
         while total < buf.len() {
-            let n = libc::read(
-                fd,
-                buf.as_mut_ptr().add(total) as *mut _,
-                buf.len() - total,
-            );
+            let n = libc::read(fd, buf.as_mut_ptr().add(total) as *mut _, buf.len() - total);
             if n < 0 {
                 close_fd(fd);
                 return Err(Error::Io);

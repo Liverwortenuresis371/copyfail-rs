@@ -29,7 +29,9 @@ fn skip_if_not_vulnerable() -> bool {
 
 #[test]
 fn scan_clean_file_reports_clean() {
-    if cfg!(not(target_os = "linux")) { return; }
+    if cfg!(not(target_os = "linux")) {
+        return;
+    }
 
     let path = target_dir().join("scan-clean.bin");
     fs::write(&path, vec![b'X'; 4096]).unwrap();
@@ -46,12 +48,20 @@ fn scan_clean_file_reports_clean() {
 
 #[test]
 fn scan_detects_cache_mutation() {
-    if cfg!(not(target_os = "linux")) { return; }
-    if skip_if_not_vulnerable() { return; }
+    if cfg!(not(target_os = "linux")) {
+        return;
+    }
+    if skip_if_not_vulnerable() {
+        return;
+    }
 
     let path = target_dir().join("scan-tampered.bin");
     fs::write(&path, vec![b'A'; 4096]).unwrap();
-    let f = fs::OpenOptions::new().read(true).write(true).open(&path).unwrap();
+    let f = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&path)
+        .unwrap();
     f.sync_all().unwrap();
     drop(f);
 
@@ -69,21 +79,32 @@ fn scan_detects_cache_mutation() {
 
     let payload: Vec<u8> = b"BBBBCCCC".to_vec();
     if let Err(e) = prim.write_buffer(target_fd, &payload) {
-        unsafe { libc::close(target_fd); }
-        eprintln!("SKIP: write_buffer returned {:?} (likely patched kernel)", e);
+        unsafe {
+            libc::close(target_fd);
+        }
+        eprintln!(
+            "SKIP: write_buffer returned {:?} (likely patched kernel)",
+            e
+        );
         let _ = fs::remove_file(&path);
         return;
     }
-    unsafe { libc::close(target_fd); }
+    unsafe {
+        libc::close(target_fd);
+    }
 
     let paths: [&core::ffi::CStr; 1] = [cpath.as_c_str()];
     let report = run_scan(&paths).unwrap();
 
     assert_eq!(report.entries.len(), 1);
     let e = &report.entries[0];
-    assert_eq!(e.verdict, FileVerdict::Tampered,
+    assert_eq!(
+        e.verdict,
+        FileVerdict::Tampered,
         "expected Tampered after page-cache mutation, got {:?} (note: {})",
-        e.verdict, e.note.as_str());
+        e.verdict,
+        e.note.as_str()
+    );
     assert_ne!(e.cache_hash, e.disk_hash, "hashes should differ");
 
     let _ = fs::remove_file(&path);
@@ -91,7 +112,9 @@ fn scan_detects_cache_mutation() {
 
 #[test]
 fn scan_unreadable_file_reports_error() {
-    if cfg!(not(target_os = "linux")) { return; }
+    if cfg!(not(target_os = "linux")) {
+        return;
+    }
 
     let cpath = CString::new("/nonexistent/path/to/file").unwrap();
     let paths: [&core::ffi::CStr; 1] = [cpath.as_c_str()];
@@ -102,7 +125,9 @@ fn scan_unreadable_file_reports_error() {
 
 #[test]
 fn scan_tmpfs_skips_with_note() {
-    if cfg!(not(target_os = "linux")) { return; }
+    if cfg!(not(target_os = "linux")) {
+        return;
+    }
 
     // /run is tmpfs on most systems
     if !std::path::Path::new("/run").exists() {

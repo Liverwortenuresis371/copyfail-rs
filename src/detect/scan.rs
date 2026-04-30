@@ -45,7 +45,9 @@ impl ScanReport {
         self.entries.iter().filter(|e| e.verdict == v).count()
     }
     pub fn any_tampered(&self) -> bool {
-        self.entries.iter().any(|e| e.verdict == FileVerdict::Tampered)
+        self.entries
+            .iter()
+            .any(|e| e.verdict == FileVerdict::Tampered)
     }
 }
 
@@ -169,7 +171,9 @@ pub fn run_scan(paths: &[&CStr]) -> Result<ScanReport, Error> {
             }
             None => {
                 entry.verdict = FileVerdict::Error;
-                let _ = entry.note.push_str("statfs failed (missing or no permission)");
+                let _ = entry
+                    .note
+                    .push_str("statfs failed (missing or no permission)");
             }
         }
 
@@ -178,5 +182,8 @@ pub fn run_scan(paths: &[&CStr]) -> Result<ScanReport, Error> {
         }
     }
 
-    Ok(ScanReport { entries, elapsed_ms: 0 })
+    Ok(ScanReport {
+        entries,
+        elapsed_ms: 0,
+    })
 }

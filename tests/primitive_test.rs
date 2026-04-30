@@ -37,7 +37,11 @@ fn primitive_mutates_page_cache_not_disk() {
 
     let path = target_dir().join("copyfail-test-scratch.bin");
     fs::write(&path, vec![b'A'; 4096]).expect("write scratch");
-    let f = fs::OpenOptions::new().read(true).write(true).open(&path).expect("open scratch");
+    let f = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&path)
+        .expect("open scratch");
     f.sync_all().expect("sync_all");
     drop(f);
 
@@ -57,8 +61,13 @@ fn primitive_mutates_page_cache_not_disk() {
 
     let result = prim.write_buffer(target_fd, &payload);
     if let Err(e) = result {
-        unsafe { libc::close(target_fd); }
-        eprintln!("SKIP: write_buffer returned {:?} (likely patched kernel)", e);
+        unsafe {
+            libc::close(target_fd);
+        }
+        eprintln!(
+            "SKIP: write_buffer returned {:?} (likely patched kernel)",
+            e
+        );
         return;
     }
 
@@ -85,7 +94,9 @@ fn primitive_mutates_page_cache_not_disk() {
     eprintln!("disk head:  {:?}", &disk_bytes[..8]);
     assert_eq!(&disk_bytes[..8], &[b'A'; 8], "disk should be untouched");
 
-    unsafe { libc::close(target_fd); }
+    unsafe {
+        libc::close(target_fd);
+    }
     let _ = fs::remove_file(&path);
 }
 
@@ -129,7 +140,9 @@ impl AlignedBox {
         assert!(!p.is_null());
         AlignedBox { p, layout }
     }
-    fn ptr(&self) -> *mut u8 { self.p }
+    fn ptr(&self) -> *mut u8 {
+        self.p
+    }
     fn into_vec(self, n: usize) -> Vec<u8> {
         let s = unsafe { std::slice::from_raw_parts(self.p, n) };
         s.to_vec()
@@ -138,6 +151,8 @@ impl AlignedBox {
 
 impl Drop for AlignedBox {
     fn drop(&mut self) {
-        unsafe { std::alloc::dealloc(self.p, self.layout); }
+        unsafe {
+            std::alloc::dealloc(self.p, self.layout);
+        }
     }
 }

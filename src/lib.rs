@@ -1,19 +1,19 @@
 #![no_std]
 #![allow(clippy::missing_safety_doc)]
 
-pub mod syscall;
 pub mod alg;
-pub mod splice;
 pub mod cache;
 pub mod check;
 pub mod detect;
 pub mod orchestrator;
 pub mod post_exploit;
+pub mod splice;
+pub mod syscall;
 pub mod vectors;
 
-pub use splice::CopyFail;
 pub use cache::{read_pair, HashPair};
 pub use check::{check_kernel, KernelStatus};
+pub use splice::CopyFail;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
@@ -31,10 +31,19 @@ pub enum Error {
 #[derive(Debug, Clone, Copy)]
 pub enum DetectionResult {
     Clean,
-    Tampered { cache_hash: [u8; 32], disk_hash: [u8; 32] },
-    Vulnerable { reason: VulnReason },
-    Mitigated { method: MitigationMethod },
-    Unknown { reason: &'static str },
+    Tampered {
+        cache_hash: [u8; 32],
+        disk_hash: [u8; 32],
+    },
+    Vulnerable {
+        reason: VulnReason,
+    },
+    Mitigated {
+        method: MitigationMethod,
+    },
+    Unknown {
+        reason: &'static str,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]

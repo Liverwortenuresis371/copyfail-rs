@@ -11,8 +11,12 @@ const SOL_ALG: i32 = 279;
 const ALG_OP_DECRYPT: u32 = 0;
 
 const CMSG_HDR_SIZE: usize = 16;
-const fn cmsg_len(payload: usize) -> usize { CMSG_HDR_SIZE + payload }
-const fn cmsg_space(payload: usize) -> usize { (cmsg_len(payload) + 7) & !7 }
+const fn cmsg_len(payload: usize) -> usize {
+    CMSG_HDR_SIZE + payload
+}
+const fn cmsg_space(payload: usize) -> usize {
+    (cmsg_len(payload) + 7) & !7
+}
 
 const OP_PAYLOAD: usize = 4;
 const IV_PAYLOAD: usize = 4 + IV_LEN as usize;
@@ -41,7 +45,11 @@ impl CopyFail {
                 return Err(last());
             }
         }
-        Ok(CopyFail { alg, pipe_rd: pipefd[0], pipe_wr: pipefd[1] })
+        Ok(CopyFail {
+            alg,
+            pipe_rd: pipefd[0],
+            pipe_wr: pipefd[1],
+        })
     }
 
     pub fn write_buffer(&mut self, target_fd: i32, buf: &[u8]) -> Result<(), Error> {
@@ -103,8 +111,14 @@ impl CopyFail {
     }
 
     pub fn build_data(chunk: &[u8], out: &mut [u8; 8]) {
-        out[0] = b'A'; out[1] = b'A'; out[2] = b'A'; out[3] = b'A';
-        out[4] = chunk[0]; out[5] = chunk[1]; out[6] = chunk[2]; out[7] = chunk[3];
+        out[0] = b'A';
+        out[1] = b'A';
+        out[2] = b'A';
+        out[3] = b'A';
+        out[4] = chunk[0];
+        out[5] = chunk[1];
+        out[6] = chunk[2];
+        out[7] = chunk[3];
     }
 
     fn deposit_chunk(&mut self, target_fd: i32, off: usize, chunk: &[u8]) -> Result<(), Error> {

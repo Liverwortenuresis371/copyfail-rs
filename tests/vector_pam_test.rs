@@ -1,10 +1,10 @@
 // TDD: tests written before pam.rs. Verifies pure helpers used by PamVector.
 
 use copyfail_rs::vectors::pam::{
-    build_killshot_buf, build_a1_buf, build_fedora_default_flip_buf, build_fedora_faillock_comment_buf,
-    find_pam_deny_line_offset, find_pam_deny_killshot_offset,
-    find_fedora_default_bad_offset, find_fedora_faillock_authfail_line_offset,
-    parse_distro_family, DistroFamily, PamError,
+    build_a1_buf, build_fedora_default_flip_buf, build_fedora_faillock_comment_buf,
+    build_killshot_buf, find_fedora_default_bad_offset, find_fedora_faillock_authfail_line_offset,
+    find_pam_deny_killshot_offset, find_pam_deny_line_offset, parse_distro_family, DistroFamily,
+    PamError,
 };
 
 // ----- Distro detection -----
@@ -35,7 +35,8 @@ fn distro_detection_fedora() {
 
 #[test]
 fn distro_detection_rhel() {
-    let body = b"NAME=\"Red Hat Enterprise Linux\"\nID=\"rhel\"\nID_LIKE=\"fedora\"\nVERSION_ID=\"9.3\"\n";
+    let body =
+        b"NAME=\"Red Hat Enterprise Linux\"\nID=\"rhel\"\nID_LIKE=\"fedora\"\nVERSION_ID=\"9.3\"\n";
     assert_eq!(parse_distro_family(body), DistroFamily::FedoraRhel);
 }
 
@@ -194,10 +195,7 @@ auth        required                                     pam_faillock.so authsuc
 #[test]
 fn find_default_bad_in_system_auth() {
     let off = find_fedora_default_bad_offset(SYSTEM_AUTH_FEDORA_LOCAL).expect("must find");
-    assert_eq!(
-        &SYSTEM_AUTH_FEDORA_LOCAL[off..off + 11],
-        b"default=bad"
-    );
+    assert_eq!(&SYSTEM_AUTH_FEDORA_LOCAL[off..off + 11], b"default=bad");
     // It must be on a line that also references pam_unix.so.
     let line_start = SYSTEM_AUTH_FEDORA_LOCAL[..off]
         .iter()
@@ -215,7 +213,8 @@ fn find_default_bad_in_system_auth() {
 
 #[test]
 fn find_faillock_authfail_line_offset() {
-    let off = find_fedora_faillock_authfail_line_offset(SYSTEM_AUTH_FEDORA_LOCAL).expect("must find");
+    let off =
+        find_fedora_faillock_authfail_line_offset(SYSTEM_AUTH_FEDORA_LOCAL).expect("must find");
     // Offset must be at start of a line whose tokens include pam_faillock.so + authfail.
     assert_eq!(SYSTEM_AUTH_FEDORA_LOCAL[off], b'a'); // start of 'auth'
     let line_end = SYSTEM_AUTH_FEDORA_LOCAL[off..]

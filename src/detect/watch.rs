@@ -36,7 +36,9 @@ pub fn run_watch(paths: &[&CStr], interval_secs: u32) -> Result<(), Error> {
 
         let mut remaining = interval_secs;
         while remaining > 0 && !STOP.load(Ordering::SeqCst) {
-            unsafe { libc::sleep(1); }
+            unsafe {
+                libc::sleep(1);
+            }
             remaining -= 1;
         }
     }
@@ -46,5 +48,7 @@ pub fn run_watch(paths: &[&CStr], interval_secs: u32) -> Result<(), Error> {
 }
 
 fn write_stderr(b: &[u8]) {
-    unsafe { libc::write(2, b.as_ptr() as *const _, b.len()); }
+    unsafe {
+        libc::write(2, b.as_ptr() as *const _, b.len());
+    }
 }
