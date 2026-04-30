@@ -33,7 +33,7 @@ copyfail-rs --mode detect  --scan|--check|--watch|--hunt   # blue side
 |---|------|--------|------------------|
 | 1 | su | `/usr/bin/su` page-cache mutation | cache-vs-disk hash diff on setuid binaries |
 | 2 | passwd | `/etc/passwd` UID flip | cache-vs-disk hash diff on `/etc/passwd` |
-| 3 | pam | `/etc/pam.d/sudo` auth bypass (novel) | cache-vs-disk hash diff on PAM configs |
+| 3 | pam | `/etc/pam.d/common-auth` (Debian/Ubuntu) or `system-auth` (Fedora/RHEL/Arch) auth bypass via 4-byte killshot — novel | cache-vs-disk hash diff on PAM configs |
 
 ## Detection (blue side)
 
