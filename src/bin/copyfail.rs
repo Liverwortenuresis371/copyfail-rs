@@ -386,7 +386,8 @@ fn detect_watch(args: &Args) -> i32 {
     for cstr in default_paths().iter() {
         let _ = paths.push(*cstr);
     }
-    match run_watch(&paths, args.interval_secs) {
+    let interval = if args.interval_secs == 0 { 60 } else { args.interval_secs };
+    match run_watch(&paths, interval) {
         Ok(_) => 0,
         Err(_) => 1,
     }
