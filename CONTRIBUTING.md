@@ -6,7 +6,7 @@ Private repo. Solo project for now.
 
 - Branch off `main`, PR back. No direct pushes.
 - Match existing code style. No reformatting churn in feature PRs.
-- Every offensive change must include the paired detection rule update under `detection/`. No exceptions — that's the project's reason to exist.
+- Every offensive change must include the paired detection rule update under `detection/`. No exceptions, that's the project's reason to exist.
 - Run `cargo fmt` + `cargo clippy --all-targets -- -D warnings` before pushing.
 - Run `cargo test --release` before pushing.
 

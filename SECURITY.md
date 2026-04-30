@@ -22,7 +22,7 @@ who find issues, raise an issue on the repository.
 ## Disclosure status
 
 CVE-2026-31431 is publicly disclosed (2026-04-29 by Theori / Xint).
-This project does not extend the disclosure surface — it implements
+This project does not extend the disclosure surface, it implements
 detection and reproduction tooling for an already-public bug.
 
 ## Mitigation reminder

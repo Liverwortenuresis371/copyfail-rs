@@ -8,7 +8,7 @@ Single static `no_std` Rust binary. ~108 KB stripped musl on x86_64.
 
 ### Exploit (`--mode exploit`)
 
-- `pam` (NEW — first public PoC for this surface): single 4-byte killshot on `/etc/pam.d/common-auth` (Debian/Ubuntu) or `system-auth` (Fedora/RHEL/Arch). Comments out `pam_deny.so` so the auth chain falls through `pam_unix` → `pam_permit.so`. Sudo with any password = root.
+- `pam` (NEW, first public PoC for this surface): single 4-byte killshot on `/etc/pam.d/common-auth` (Debian/Ubuntu) or `system-auth` (Fedora/RHEL/Arch). Comments out `pam_deny.so` so the auth chain falls through `pam_unix` → `pam_permit.so`. Sudo with any password = root.
 - `su`: setuid binary text-section mutation in `/usr/bin/su`. `execve()` runs operator-supplied shellcode as root.
 - `passwd`: UID flip in `/etc/passwd`. Subsequent `su <user>` or login = root.
 - `--vector auto` (default): ranks `pam > su > passwd` by stealth, picks the highest applicable.
@@ -29,11 +29,11 @@ This is the **only public tool that catches CopyFail tampering**. Mainstream FIM
 
 ### Detection artifacts (`detection/`)
 
-- `sigma/copyfail-af-alg.yml` — Sigma rule, AF_ALG SOCK_SEQPACKET creation by non-root.
-- `auditd/copyfail.rules` — auditd ruleset, key `copyfail_afalg_socket`.
-- `ebpf/copyfail-trace.bt` — bpftrace one-liner.
-- `apparmor/copyfail-block.profile` — AppArmor 3.0+ deny rule.
-- `mitigation/disable-algif.sh` — modprobe blacklist + `=y` warning.
+- `sigma/copyfail-af-alg.yml`, Sigma rule, AF_ALG SOCK_SEQPACKET creation by non-root.
+- `auditd/copyfail.rules`, auditd ruleset, key `copyfail_afalg_socket`.
+- `ebpf/copyfail-trace.bt`, bpftrace one-liner.
+- `apparmor/copyfail-block.profile`, AppArmor 3.0+ deny rule.
+- `mitigation/disable-algif.sh`, modprobe blacklist + `=y` warning.
 
 ## Pre-built binaries
 
@@ -44,7 +44,7 @@ Three musl-static, fully self-contained binaries attached to this release. SHA25
 | `copyfail-x86_64-musl` | x86_64-unknown-linux-musl | 108 KB |
 | `copyfail-aarch64-musl` | aarch64-unknown-linux-musl | 96 KB |
 | `copyfail-armv7-musleabihf` | armv7-unknown-linux-musleabihf | 86 KB |
-| `checksums.txt` | sha256 sums | — |
+| `checksums.txt` | sha256 sums |, |
 
 ## Verification
 
@@ -57,11 +57,11 @@ copyfail-armv7-musleabihf: OK
 
 ## Documentation
 
-- [`README.md`](../blob/main/README.md) — top-level, terse.
-- [`BLOG.md`](../blob/main/BLOG.md) — long-form narrative version.
-- [`docs/usage.md`](../blob/main/docs/usage.md) — concrete examples per mode.
-- [`docs/threat-model.md`](../blob/main/docs/threat-model.md) — STRIDE-flavored, ~1 page.
-- [`docs/PUBLISH-CHECKLIST.md`](../blob/main/docs/PUBLISH-CHECKLIST.md) — maintainer checklist.
+- [`README.md`](../blob/main/README.md), top-level, terse.
+- [`BLOG.md`](../blob/main/BLOG.md), long-form narrative version.
+- [`docs/usage.md`](../blob/main/docs/usage.md), concrete examples per mode.
+- [`docs/threat-model.md`](../blob/main/docs/threat-model.md), STRIDE-flavored, ~1 page.
+- [`docs/PUBLISH-CHECKLIST.md`](../blob/main/docs/PUBLISH-CHECKLIST.md), maintainer checklist.
 
 ## Credits
 
@@ -69,8 +69,8 @@ copyfail-armv7-musleabihf: OK
 |--------------|-----|
 | Bug discovery + CVE coordination | Theori / Xint (disclosed 2026-04-29) |
 | Original Python PoC | Theori / Xint |
-| C port + 2-vector taxonomy + nolibc packaging | tgies — `github.com/tgies/copy-fail-c` |
-| Static Go port | badsectorlabs — `github.com/badsectorlabs/copyfail-go` |
+| C port + 2-vector taxonomy + nolibc packaging | tgies, `github.com/tgies/copy-fail-c` |
+| Static Go port | badsectorlabs, `github.com/badsectorlabs/copyfail-go` |
 | **Rust port + PAM vector + dual-mode detection** | **diemoeve (this project)** |
 
 ## License
