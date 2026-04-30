@@ -7,6 +7,19 @@ Built in the same model as `diemoeve/oxide-*` — every offensive vector ships
 with detection signatures (Sigma, auditd, eBPF), forensic indicators, and a
 mitigation guide. Tested on the author's own hardware. Private repo.
 
+## Why detection matters here
+
+CopyFail mutates target files in the **page cache only**. On-disk inodes
+remain pristine. Every mainstream file integrity monitor (AIDE, Wazuh, OSSEC,
+Tripwire, Samhain) reads via buffered I/O → page-cache-served → hashes the
+corrupted bytes. **They report no change.** Defenders running standard FIM
+on a CopyFail-ed host see nothing.
+
+The detection mode in this tool reads target files via `O_DIRECT` (bypasses
+page cache, hits disk) and via normal `read()` (gets cache), then diffs the
+hashes. Mismatch = page-cache tampering. This is the gap mainstream FIM
+leaves open and the reason this project ships paired detection.
+
 ## Modes
 
 ```
