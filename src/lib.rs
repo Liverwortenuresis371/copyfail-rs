@@ -6,6 +6,8 @@ pub mod alg;
 pub mod splice;
 pub mod cache;
 pub mod check;
+pub mod detect;
+pub mod vectors;
 
 pub use splice::CopyFail;
 pub use cache::{read_pair, HashPair};
@@ -21,13 +23,32 @@ pub enum Error {
     InvalidArgument(&'static str),
     OpenFailed,
     Io,
+    BufferFull,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum DetectionResult {
     Clean,
-    Tampered { path: &'static str, cache_hash: [u8; 32], disk_hash: [u8; 32] },
+    Tampered { cache_hash: [u8; 32], disk_hash: [u8; 32] },
+    Vulnerable { reason: VulnReason },
+    Mitigated { method: MitigationMethod },
     Unknown { reason: &'static str },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum VulnReason {
+    KernelInRange,
+    ModuleAvailable,
+    ConfigBuiltIn,
+    TemplateRegistered,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum MitigationMethod {
+    ModprobeBlacklist,
+    KernelPatch,
+    SeccompFilter,
+    ApparmorProfile,
 }
 
 pub trait Vector {

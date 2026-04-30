@@ -19,6 +19,7 @@ doctest = false
 [dependencies]
 libc = "0.2"
 sha2 = { version = "0.11", default-features = false }
+heapless = { version = "0.8", default-features = false }
 
 [profile.release]
 lto = "fat"
@@ -28,3 +29,6 @@ strip = true
 codegen-units = 1
 debug = false
 overflow-checks = false
+
+[profile.dev]
+panic = "abort"

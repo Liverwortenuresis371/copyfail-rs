@@ -13,8 +13,12 @@ pub const AUTHSIZE: u32 = 4;
 pub const IV_LEN: u32 = 16;
 pub const AAD_LEN: u32 = 8;
 
+// authencesn key layout (kernel crypto_authenc_extractkeys):
+//   rtattr { u16 rta_len=8 (LE); u16 rta_type=1 (LE, CRYPTO_AUTHENC_KEYA_PARAM) }
+//   __be32 enckeylen = 16  (selects AES-128 for cbc(aes))
+//   auth_key[16] (HMAC-SHA256 truncated key) + enc_key[16] (AES-128 key)
 pub const AUTHENC_KEY: [u8; 40] = [
-    0x08, 0x00, 0x01, 0x00, 0x10, 0x00, 0x20, 0x00,
+    0x08, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x10,
     b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A',
     b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A',
     b'A', b'A', b'A', b'A', b'A', b'A', b'A', b'A',
