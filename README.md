@@ -156,13 +156,13 @@ Exploit mode mutates kernel page cache. RAM-only but treat as destructive. Block
 
 ## Credits
 
-| | |
-|--|--|
-| Bug + disclosure | Theori / Xint (2026-04-29) |
-| Original PoC | Theori Python |
-| C port + nolibc | tgies (`copy-fail-c`) |
-| Static Go port | badsectorlabs (`copyfail-go`) |
-| **PAM vector + dual-mode detection** | **diemoeve (this)** |
+CVE-2026-31431 disclosed by Theori / Xint on 2026-04-29 ([writeup](https://copy.fail/), [Xint blog](https://xint.io/blog/copy-fail-linux-distributions)). Prior public PoCs:
+
+- [theori-io/copy-fail-CVE-2026-31431](https://github.com/theori-io/copy-fail-CVE-2026-31431) (Python, 732 bytes, su vector)
+- [tgies/copy-fail-c](https://github.com/tgies/copy-fail-c) (C with nolibc, su + passwd vectors, portable)
+- [badsectorlabs/copyfail-go](https://github.com/badsectorlabs/copyfail-go) (static Go binary, su vector)
+
+This project (`copyfail-rs`): adds the PAM auth-bypass vector, dual-mode detection, IR artifacts.
 
 ## License
 
